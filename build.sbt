@@ -1,3 +1,4 @@
+organization := "gr.armand"
 name := "stsc"
 
 version := "1.0"
