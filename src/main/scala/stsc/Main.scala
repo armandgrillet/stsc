@@ -8,6 +8,6 @@ import breeze.stats._
 
 object Main {
     def main(args: Array[String]) = {
-        val tree = TessellationTree.createWithMaxObservations(DenseMatrix((1.0, 3.0), (3.0, 3.0)), 4)
+        val tree = TessellationTree.createWithMaxObservations(DenseMatrix((1.0, 3.0), (3.0, 3.0)), 2)
     }
 }
