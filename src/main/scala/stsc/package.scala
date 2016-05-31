@@ -18,7 +18,7 @@ package object stsc {
     val cutUsingContentDimensions = (tile: Tile, observations: DenseMatrix[Double]) => {
         val minCols = min(observations(::, *)).t
         val maxCols = max(observations(::, *)).t
-        val dists = sqrt(pow((maxCols - minCols), 2))
+        val dists = abs(maxCols - minCols)
         val cutDirection = argmax(dists)
 
         val median = breeze.stats.median(observations(::, cutDirection))

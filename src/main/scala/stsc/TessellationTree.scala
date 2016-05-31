@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 class TessellationTree(val dimension: Int, val tiles: List[Tile]) {
     def toCSV(filePath: String) = {
         var tilesDenseMatrix = DenseMatrix.zeros[Double](this.tiles.length + 1, dimension * 2)
-        tilesDenseMatrix(0, 0) = this.tiles(0).radius // The radius
+        tilesDenseMatrix(0, 0) = this.tiles(0).borderWidth // The border width.
         var i = 0
         for (i <- 0 until tiles.length) {
             tilesDenseMatrix(i + 1, ::) := tiles(i).transpose()
@@ -36,15 +36,15 @@ class TessellationTree(val dimension: Int, val tiles: List[Tile]) {
 
 object TessellationTree {
     // Initialization functions.
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileRadius: Double, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
-        if (tileRadius < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileRadius + ".") }
+    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
+        if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the dataset rows.") }
-        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileRadius)
+        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
         val tiles: List[Tile] = cutWithMaxObservations(dataset, firstTile, maxObservations, cutDirectionFunction)
         return new TessellationTree(dataset.cols, tiles)
     }
 
-    /*def createWithTilesNumber(dataset: DenseMatrix[Double], tileRadius: Double = 0, tilesNumber: Int): TessellationTree = {
+    /*def createWithTilesNumber(dataset: DenseMatrix[Double], tileBorderWidth: Double = 0, tilesNumber: Int): TessellationTree = {
 
 }*/
 
@@ -53,13 +53,13 @@ def fromCSV(filePath: String): TessellationTree = {
     if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
     if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
 
-    val radius = tilesDenseMatrix(0, 0)
+    val borderWidth = tilesDenseMatrix(0, 0)
     val dimension = tilesDenseMatrix.cols / 2
     val tiles = ListBuffer.empty[Tile]
     var i = 0
     for (i <- 1 until tilesDenseMatrix.rows) {
         val tile = tilesDenseMatrix(::, i)
-        tiles += Tile(tile(0 until dimension), tile(dimension to -1), radius)
+        tiles += Tile(tile(0 until dimension), tile(dimension to -1), borderWidth)
     }
     return new TessellationTree(dimension, tiles.toList)
 }
