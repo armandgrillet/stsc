@@ -5,30 +5,26 @@ import breeze.numerics._
 import breeze.stats._
 
 package object stsc {
-    // Anonymous functions to define if the cut should be vertical or horizontal, 0/false = vertical and 1/true = horizontal
-    val getDirectionDependingOnTileDimensions = (parentTile: Tile, observations: DenseMatrix[Double]) => {
-        val (width, height) = parentTile.dimensions()
-        if (width < height) {
-            true
-        } else {
-            false
-        }
-    }: Boolean
+    // Anonymous functions to define if the cut should be vertical or horizontal, 0 = vertical (X) and 1 = horizontal (Y) and 2 = Z
+    val cutUsingTileDimensions = (tile: Tile, observations: DenseMatrix[Double]) => {
+        val cutDirection = argmax(tile.dimensions())
+        val median = breeze.stats.median(observations(::, cutDirection))
+        val firstTile, secondTile = tile
+        firstTile.maxs(cutDirection) = median
+        secondTile.mins(cutDirection) = median
+        (firstTile, secondTile)
+    }: (Tile, Tile)
 
-    val getDirectionDependingOnContentDimensions = (parentTile: Tile, observations: DenseMatrix[Double]) => {
-        val (width, height) = parentTile.dimensions()
-        val minObservationX = min(observations(::, 0))
-        val maxObservationX = max(observations(::, 0))
-        val minObservationY = min(observations(::, 1))
-        val maxObservationY = max(observations(::, 1))
-        if (stsc.dist(minObservationX, maxObservationX) < stsc.dist(minObservationY, maxObservationY)) {
-            true
-        } else {
-            false
-        }
-    }: Boolean
+    val cutUsingContentDimensions = (tile: Tile, observations: DenseMatrix[Double]) => {
+        val minCols = min(observations(::, *)).t
+        val maxCols = max(observations(::, *)).t
+        val dists = sqrt(pow((maxCols - minCols), 2))
+        val cutDirection = argmax(dists)
 
-    def dist(a: Double, b: Double): Double = {
-        return sqrt(pow(a - b, 2))
-    }
+        val median = breeze.stats.median(observations(::, cutDirection))
+        val firstTile, secondTile = tile
+        firstTile.maxs(cutDirection) = median
+        secondTile.mins(cutDirection) = median
+        (firstTile, secondTile)
+    }: (Tile, Tile)
 }

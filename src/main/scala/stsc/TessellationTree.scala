@@ -8,10 +8,10 @@ import java.io.File
 import scala.util.control.Breaks._
 import scala.collection.mutable.ListBuffer
 
-class TessellationTree(val tiles: List[Tile], val tileRadius: Double) {
+class TessellationTree(val dimension: Int, val tiles: List[Tile]) {
     def toCSV(filePath: String) = {
-        var tilesDenseMatrix = DenseMatrix.zeros[Double](this.tiles.length + 1, 4)
-        tilesDenseMatrix(0, ::) := DenseVector(this.tileRadius, 0, 0, 0).t // First line = radius.
+        var tilesDenseMatrix = DenseMatrix.zeros[Double](this.tiles.length + 1, dimension * 2)
+        tilesDenseMatrix(0, 0) = this.tiles(0).radius // The radius
         var i = 0
         for (i <- 0 until tiles.length) {
             tilesDenseMatrix(i + 1, ::) := tiles(i).transpose()
@@ -25,7 +25,7 @@ class TessellationTree(val tiles: List[Tile], val tileRadius: Double) {
         for (tile <- this.tiles) {
             if (tile.has(observation)) {
                 owningTiles += tile
-                if (owningTiles.length == 1 && tile.hasDeeply(observation, this.tileRadius)) {
+                if (owningTiles.length == 1 && tile.hasDeeply(observation)) {
                     return owningTiles.toList
                 }
             }
@@ -36,37 +36,38 @@ class TessellationTree(val tiles: List[Tile], val tileRadius: Double) {
 
 object TessellationTree {
     // Initialization functions.
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileRadius: Double = 0, cutDirectionFunction: (Tile, DenseMatrix[Double]) => Boolean = stsc.getDirectionDependingOnTileDimensions): TessellationTree = {
+    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileRadius: Double, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
         if (tileRadius < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileRadius + ".") }
-        if (dataset.cols != 2) { throw new IndexOutOfBoundsException("The tessellation tree only works with two-dimensional datasets.") }
-        if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations must be less than the dataset rows.") }
-        val firstTile = Tile(scala.Double.NegativeInfinity, scala.Double.NegativeInfinity, scala.Double.PositiveInfinity, scala.Double.PositiveInfinity)
+        if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the dataset rows.") }
+        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileRadius)
         val tiles: List[Tile] = cutWithMaxObservations(dataset, firstTile, maxObservations, cutDirectionFunction)
-        return new TessellationTree(tiles, tileRadius)
+        return new TessellationTree(dataset.cols, tiles)
     }
 
     /*def createWithTilesNumber(dataset: DenseMatrix[Double], tileRadius: Double = 0, tilesNumber: Int): TessellationTree = {
 
-    }*/
+}*/
 
-    def fromCSV(filePath: String): TessellationTree = {
-        var tilesDenseMatrix = csvread(new File(filePath))
-        if (tilesDenseMatrix.cols != 4) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree") }
-        if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree") }
+def fromCSV(filePath: String): TessellationTree = {
+    var tilesDenseMatrix = csvread(new File(filePath))
+    if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
+    if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
 
-        val tileRadius = tilesDenseMatrix(0, 0)
-        val tiles = ListBuffer.empty[Tile]
-        var i = 0
-        for (i <- 1 until tilesDenseMatrix.rows) {
-            tiles += Tile(tilesDenseMatrix(i, 0), tilesDenseMatrix(i, 1), tilesDenseMatrix(i, 2), tilesDenseMatrix(i, 3))
-        }
-        return new TessellationTree(tiles.toList, tileRadius)
+    val radius = tilesDenseMatrix(0, 0)
+    val dimension = tilesDenseMatrix.cols / 2
+    val tiles = ListBuffer.empty[Tile]
+    var i = 0
+    for (i <- 1 until tilesDenseMatrix.rows) {
+        val tile = tilesDenseMatrix(::, i)
+        tiles += Tile(tile(0 until dimension), tile(dimension to -1), radius)
     }
+    return new TessellationTree(dimension, tiles.toList)
+}
 
-private def observationsInTile(matrix: DenseMatrix[Double], tile: Tile, axis: Int): DenseMatrix[Double] = {
-    var observations = DenseMatrix.zeros[Double](matrix.rows, matrix.cols)
+private def observationsInTile(dataset: DenseMatrix[Double], tile: Tile, axis: Int): DenseMatrix[Double] = {
+    var observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
     var numberOfObservations = 0
-    for (row <- matrix(*,::)) {
+    for (row <- dataset(*,::)) {
         if (tile.has(row)) {
             observations(numberOfObservations, 0) = row(0)
             observations(numberOfObservations, 1) = row(1)
@@ -76,21 +77,11 @@ private def observationsInTile(matrix: DenseMatrix[Double], tile: Tile, axis: In
     return observations(::, 0 until numberOfObservations)
 }
 
-private def cutWithMaxObservations(matrix: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutDirectionFunction: (Tile, DenseMatrix[Double]) => Boolean): List[Tile] = {
-    val observations = observationsInTile(matrix, parentTile, 0)
+private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): List[Tile] = {
+    val observations = observationsInTile(dataset, parentTile, 0)
     if (observations.rows > maxObservations) {
-        if (cutDirectionFunction(parentTile, observations)) {
-            val medianX = median(observations(::, 0))
-            val tileLeft = Tile(parentTile.minX, parentTile.minY, medianX, parentTile.maxY)
-            val tileRight = Tile(medianX, parentTile.minY, parentTile.maxX, parentTile.maxY)
-            // We use matrix instead of observations to introduce neighborhoods later.
-            return List.concat(cutWithMaxObservations(matrix, tileLeft, maxObservations, cutDirectionFunction), cutWithMaxObservations(matrix, tileRight, maxObservations, cutDirectionFunction))
-        } else { // Dividing the title horizontally makes more sense.
-            val medianY = median(observations(::, 1))
-            val tileBottom = Tile(parentTile.minX, parentTile.minY, parentTile.maxX, medianY)
-            val tileTop = Tile(parentTile.minX, medianY, parentTile.maxX, parentTile.maxY)
-            return List.concat(cutWithMaxObservations(matrix, tileBottom, maxObservations, cutDirectionFunction), cutWithMaxObservations(matrix, tileTop, maxObservations, cutDirectionFunction))
-        }
+        val childrenTiles = cutDirectionFunction(parentTile, observations)
+        return List.concat(cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutDirectionFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutDirectionFunction))
     } else {
         return List(parentTile)
     }
