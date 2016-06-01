@@ -4,4 +4,6 @@
 <img src="stsc.png">
 </p>
 
-A Self-Tuning Spectral Clustering implementation made for production. Based on the paper [*Self Tuning Spectral Clustering Algorithm*](http://www.vision.caltech.edu/lihi/Demos/SelfTuningClustering.html).
+A implementation of the Self-Tuning Spectral Clustering algorithm and more. Based on the paper [*Self Tuning Spectral Clustering Algorithm*](http://www.vision.caltech.edu/lihi/Demos/SelfTuningClustering.html).
+
+Copyright © 2016 Armand Grillet. All rights reserved.

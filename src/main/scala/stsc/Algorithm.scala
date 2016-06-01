@@ -7,6 +7,7 @@ import breeze.stats._
 import scala.collection.immutable.TreeMap
 import scala.util.control.Breaks._
 
+/** Factory for gr.armand.stsc.Algorithm instances. */
 object Algorithm {
     def cluster(data: DenseMatrix[Double], tesselation: DenseMatrix[Double] = null, radius: Int = 0, min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
         if (min < 2) {
@@ -95,7 +96,7 @@ object Algorithm {
         return (orderedQualities, clusters)
     }
 
-    def vertStack(matrix: DenseMatrix[Double], iterations: Int): DenseMatrix[Double] = {
+    private def vertStack(matrix: DenseMatrix[Double], iterations: Int): DenseMatrix[Double] = {
         var stack = matrix
         var i = 0
         while (i < iterations - 1) {
@@ -105,7 +106,7 @@ object Algorithm {
         return stack
     }
 
-    def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
+    private def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
         var distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
         var distanceVector = DenseVector(0.0).t // The distance vector containing the distance between two vectors.
 
@@ -121,7 +122,7 @@ object Algorithm {
         return distanceMatrix
     }
 
-    def localScale(distanceMatrix: DenseMatrix[Double], k: Int): DenseVector[Double] = {
+    private def localScale(distanceMatrix: DenseMatrix[Double], k: Int): DenseVector[Double] = {
         if (k > distanceMatrix.cols - 1) {
             return max(distanceMatrix(*, ::)) // Maximum distance.
         } else {
@@ -137,7 +138,7 @@ object Algorithm {
         }
     }
 
-    def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
+    private def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
         var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
         (0 until distanceMatrix.rows).map{ row =>
@@ -160,7 +161,7 @@ object Algorithm {
     var ik, jk = DenseVector.zeros[Int](0)
     var ev = DenseMatrix.zeros[Double](0, 0)
 
-    def paraspectre(eigenvectors: DenseMatrix[Double]): (Double, DenseVector[Int], DenseMatrix[Double]) = {
+    private def paraspectre(eigenvectors: DenseMatrix[Double]): (Double, DenseVector[Int], DenseMatrix[Double]) = {
         dims = eigenvectors.cols
         data = eigenvectors.rows
         angles = (dims * (dims - 1) / 2).toInt
@@ -237,12 +238,12 @@ object Algorithm {
         }
     }
 
-    def clusters(rotatedEigenvectors: DenseMatrix[Double]): DenseVector[Int] = {
+    private def clusters(rotatedEigenvectors: DenseMatrix[Double]): DenseVector[Int] = {
         val absEigenvectors = abs(rotatedEigenvectors)
         return argmax(absEigenvectors(*, ::))
     }
 
-    def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
+    private def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
         // Take the square of all entries and find the max of each row
         var squareMatrix = pow(matrix, 2)
         val maxValues = max(squareMatrix(*, ::)) // Max of each row
@@ -252,12 +253,12 @@ object Algorithm {
         return 1.0 - (cost / data - 1.0) / dims
     }
 
-    def rotateGivens(theta: DenseVector[Double]): DenseMatrix[Double] = {
+    private def rotateGivens(theta: DenseVector[Double]): DenseMatrix[Double] = {
         val g = uAB(theta, 0, angles - 1)
         return ev * g
     }
 
-    def uAB(theta: DenseVector[Double], a: Int, b: Int): DenseMatrix[Double] = {
+    private def uAB(theta: DenseVector[Double], a: Int, b: Int): DenseMatrix[Double] = {
         var i, k = 0
         var uab = DenseMatrix.eye[Double](dims)
 
