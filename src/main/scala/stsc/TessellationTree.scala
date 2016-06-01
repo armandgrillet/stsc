@@ -38,15 +38,20 @@ object TessellationTree {
     // Initialization functions.
     def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
-        if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the dataset rows.") }
+        if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
         val tiles: List[Tile] = cutWithMaxObservations(dataset, firstTile, maxObservations, cutDirectionFunction)
         return new TessellationTree(dataset.cols, tiles)
     }
 
-    /*def createWithTilesNumber(dataset: DenseMatrix[Double], tileBorderWidth: Double = 0, tilesNumber: Int): TessellationTree = {
-
-}*/
+    def createWithTilesNumber(dataset: DenseMatrix[Double], tileBorderWidth: Double = 0, tilesNumber: Int, cutDirectionFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
+        if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
+        if (tilesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
+        val maxObservations = math.ceil(dataset.rows / tilesNumber).toInt
+        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
+        val tiles: List[Tile] = cutWithMaxObservations(dataset, firstTile, maxObservations, cutDirectionFunction)
+        return new TessellationTree(dataset.cols, tiles)
+    }
 
 def fromCSV(filePath: String): TessellationTree = {
     var tilesDenseMatrix = csvread(new File(filePath))
