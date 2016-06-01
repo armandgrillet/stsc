@@ -11,7 +11,7 @@ package object stsc {
         val median = breeze.stats.median(observations(::, cutDirection))
         val firstTile, secondTile = tile
         firstTile.maxs(cutDirection) = median
-        secondTile.mins(cutDirection) = median
+        secondTile.mins(cutDirection) = median + Double.MinPositiveValue
         (firstTile, secondTile)
     }: (Tile, Tile)
 
@@ -24,7 +24,7 @@ package object stsc {
         val median = breeze.stats.median(observations(::, cutDirection))
         val firstTile, secondTile = tile
         firstTile.maxs(cutDirection) = median
-        secondTile.mins(cutDirection) = median
+        secondTile.mins(cutDirection) = median + Double.MinPositiveValue
         (firstTile, secondTile)
     }: (Tile, Tile)
 }
