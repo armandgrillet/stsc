@@ -146,11 +146,11 @@ object Algorithm {
 
     // Step 5 of the self-tuning spectral clustering algorithm.
 
-    var dims = 0
-    var data = 0
-    var angles = 0
-    var ik, jk = DenseVector.zeros[Int](0)
-    var ev = DenseMatrix.zeros[Double](0, 0)
+    private var dims = 0
+    private var data = 0
+    private var angles = 0
+    private var ik, jk = DenseVector.zeros[Int](0)
+    private var ev = DenseMatrix.zeros[Double](0, 0)
 
     private def paraspectre(eigenvectors: DenseMatrix[Double]): (Double, DenseVector[Int], DenseMatrix[Double]) = {
         dims = eigenvectors.cols
