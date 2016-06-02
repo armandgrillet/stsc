@@ -15,6 +15,8 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
     require(mins.length == maxs.length)
     require(borderWidth >= 0)
 
+    val emptyBitVector = BitVector.zeros(mins.length)
+
     /** Check if an observation is in a tile.
       *
       * @param observation the observation to check, represented as a DenseVector.
@@ -22,7 +24,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       */
     def has(observation: DenseVector[Double]): Boolean = {
         if (observation.length != mins.length) { throw new IndexOutOfBoundsException("The observation dimension has to be the same as the tile.") }
-        if ((observation :< (mins :- borderWidth)).length == 0 && (observation :> (maxs :+ borderWidth)).length == 0) {
+        if (observation :< (mins :- borderWidth) == emptyBitVector && observation :> (maxs :+ borderWidth) == emptyBitVector) {
             return true
         }
         return false
@@ -34,16 +36,16 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       * @return if the tile has the observation deeply in it.
       */
     def hasDeeply(observation: DenseVector[Double]): Boolean = {
-        if ((observation :< (mins :+ borderWidth)).length == 0 && (observation :> (maxs :- borderWidth)).length == 0) {
+        if ((observation :< (mins :+ borderWidth)) == emptyBitVector && (observation :> (maxs :- borderWidth)) == emptyBitVector) {
             return true
         }
         return false
     }
 
     /** The length of a tile in every dimension.
-      * @return the tile dimensions has a DenseVector, tile.dimensions()(0) is the length of the tile in the first dimension.
+      * @return the tile dimensions has a DenseVector, tile.sizes()(0) is the length of the tile in the first dimension.
       */
-    def dimensions(): DenseVector[Double] = {
+    def sizes(): DenseVector[Double] = {
         return abs(maxs - mins)
     }
 

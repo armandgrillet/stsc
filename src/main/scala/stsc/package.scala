@@ -36,12 +36,18 @@ package object stsc {
       * @param tile the parent tile.
       * @param observations the observations in the tile.
       */
-    val cutUsingTileDimensions = (tile: Tile, observations: DenseMatrix[Double]) => {
-        val cutDirection = argmax(tile.dimensions())
+    val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
+        val cutDirection = argmax(parent.sizes())
         val median = breeze.stats.median(observations(::, cutDirection))
-        val firstTile, secondTile = tile // The children tiles will be similar as the parent.
-        firstTile.maxs(cutDirection) = median
-        secondTile.mins(cutDirection) = median + Double.MinPositiveValue // We do not want the two tiles to overlap.
+
+        var firstTileMaxs = parent.maxs.copy
+        firstTileMaxs(cutDirection) = median
+        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+
+        var secondTileMins = parent.mins.copy
+        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+
         (firstTile, secondTile)
     }: (Tile, Tile)
 
@@ -50,15 +56,21 @@ package object stsc {
       * @param tile the parent tile.
       * @param observations the observations in the tile.
       */
-    val cutUsingContentDimensions = (tile: Tile, observations: DenseMatrix[Double]) => {
+    val cutUsingContentDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
         val minCols = min(observations(::, *)).t
         val maxCols = max(observations(::, *)).t
         val dists = abs(maxCols - minCols)
         val cutDirection = argmax(dists)
         val median = breeze.stats.median(observations(::, cutDirection))
-        val firstTile, secondTile = tile
-        firstTile.maxs(cutDirection) = median
-        secondTile.mins(cutDirection) = median + Double.MinPositiveValue
+
+        var firstTileMaxs = parent.maxs.copy
+        firstTileMaxs(cutDirection) = median
+        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+
+        var secondTileMins = parent.mins.copy
+        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+
         (firstTile, secondTile)
     }: (Tile, Tile)
 }

@@ -11,13 +11,10 @@ import scala.util.control.Breaks._
 object Algorithm {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param data the observations, one row per observation.
-    * @param tesselation the tessellation tree to cut the workload.
-    * @param tileBorderWidth the border width of the tiles in the tessellation tree.
-    * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
+    * @param dataset the dataset to cluster
     * @return the tessellation tree.
     */
-    def cluster(data: DenseMatrix[Double], tesselation: DenseMatrix[Double] = null, radius: Int = 0, min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
+    def cluster(dataset: DenseMatrix[Double], min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
         if (min < 2) {
             throw new IllegalArgumentException("The minimum number of clusters cannot be less than 2.");
         }
@@ -26,22 +23,6 @@ object Algorithm {
             throw new IllegalArgumentException("The minimum number of clusters needs to be strictly inferior compared to the maximum number of clusters.");
         }
 
-        if (tesselation != null) {
-            /** There are two colomns per dimensions in a tesselation tree (one for min, one for max).
-            * As one column in the dataset represents one dimension,
-            * the number of columns in the tesselation tree is 2 times the number of colums in the dataset.
-            */
-            if (tesselation.cols != 2 * data.cols) {
-                throw new IllegalArgumentException("The tesselation structure is wrong. Expected a dense matrix with " + 2 * data.cols + " columns.");
-            } else {
-                return cluster(data, min, max)
-            }
-        } else {
-            return cluster(data, min, max)
-        }
-    }
-
-    private def cluster(dataset: DenseMatrix[Double], min: Int, max: Int): (Map[Int, Double], DenseVector[Int]) = {
         // Centralize and scale the data.
         val meanCols = mean(dataset(::, *)).t.toDenseMatrix
         var matrix = (dataset - vertStack(meanCols, dataset.rows))

@@ -15,13 +15,13 @@ import scala.collection.mutable.ListBuffer
 * @param maxs the maximums of the tile in every dimension.
 * @param borderWidth the border width used when an observation is between two tiles.
 */
-class TessellationTree(val dimension: Int, val tiles: List[Tile]) {
+class TessellationTree(val dimensions: Int, val tiles: List[Tile]) {
     /** Write the tessellation tree as a CSV file.
     *
     * @param filePath the path where the tessellation tree has to be written.
     */
     def toCSV(filePath: String) = {
-        var tilesDenseMatrix = DenseMatrix.zeros[Double](this.tiles.length + 1, dimension * 2)
+        var tilesDenseMatrix = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
         tilesDenseMatrix(0, 0) = tiles(0).borderWidth
         var i = 0
         for (i <- 0 until tiles.length) {
@@ -95,27 +95,26 @@ object TessellationTree {
         if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
 
         val borderWidth = tilesDenseMatrix(0, 0)
-        val dimension = tilesDenseMatrix.cols / 2
+        val dimensions = tilesDenseMatrix.cols / 2
         val tiles = ListBuffer.empty[Tile]
         var i = 0
         for (i <- 1 until tilesDenseMatrix.rows) {
             val tile = tilesDenseMatrix(::, i)
-            tiles += Tile(tile(0 until dimension), tile(dimension to -1), borderWidth)
+            tiles += Tile(tile(0 until dimensions), tile(dimensions to -1), borderWidth)
         }
-        return new TessellationTree(dimension, tiles.toList)
+        return new TessellationTree(dimensions, tiles.toList)
     }
 
     private def observationsInTile(dataset: DenseMatrix[Double], tile: Tile, axis: Int): DenseMatrix[Double] = {
-        var observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
+        val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
         var numberOfObservations = 0
         for (row <- dataset(*,::)) {
             if (tile.has(row)) {
-                observations(numberOfObservations, 0) = row(0)
-                observations(numberOfObservations, 1) = row(1)
+                observations(numberOfObservations, ::) := row.t
                 numberOfObservations += 1
             }
         }
-        return observations(::, 0 until numberOfObservations)
+        return observations(0 until numberOfObservations, ::)
     }
 
     private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): List[Tile] = {
