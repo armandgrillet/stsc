@@ -12,7 +12,9 @@ object Algorithm {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
     * @param dataset the dataset to cluster
-    * @return the tessellation tree.
+    * @param min the minimum number of clusters in the dataset
+    * @param max the maximum number of clusters in the dataset
+    * @return a Map of qualities (key = number of clusters, value = quality for this number of clusters) and the clusters for the best quality
     */
     def cluster(dataset: DenseMatrix[Double], min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
         if (min < 2) {

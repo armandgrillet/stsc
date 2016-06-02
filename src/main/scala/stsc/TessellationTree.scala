@@ -33,7 +33,7 @@ class TessellationTree(val dimensions: Int, val tiles: List[Tile]) {
     /** Returns the tile(s) owning a given observation.
     *
     * @param observation the observation to check, represented as a DenseVector.
-    * @return a list of the tiles having the tiles. They can be more than 1 tile due to the border width.
+    * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
     */
     def owningTiles(observation: DenseVector[Double]): List[Tile] = {
         var owningTiles = ListBuffer.empty[Tile]
@@ -84,7 +84,7 @@ object TessellationTree {
         return new TessellationTree(dataset.cols, tiles)
     }
 
-    /** Initialize a tessellation tree using a given CSV. The CSV must have a specific structure that can be done using toCSV().
+    /** Initialize a tessellation tree using a given CSV. The CSV must have a specific structure created by toCSV().
     *
     * @param filePath the path of the CSV file containing the tessellation tree.
     * @return the tessellation tree.
@@ -99,10 +99,20 @@ object TessellationTree {
         val tiles = ListBuffer.empty[Tile]
         var i = 0
         for (i <- 1 until tilesDenseMatrix.rows) {
-            val tile = tilesDenseMatrix(::, i)
-            tiles += Tile(tile(0 until dimensions), tile(dimensions to -1), borderWidth)
+            val rowAsTile = tilesDenseMatrix(i, ::).t
+            tiles += Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1), borderWidth)
         }
         return new TessellationTree(dimensions, tiles.toList)
+    }
+
+    private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): List[Tile] = {
+        val observations = observationsInTile(dataset, parentTile, 0)
+        if (observations.rows > maxObservations) {
+            val childrenTiles = cutFunction(parentTile, observations)
+            return List.concat(cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutFunction))
+        } else {
+            return List(parentTile)
+        }
     }
 
     private def observationsInTile(dataset: DenseMatrix[Double], tile: Tile, axis: Int): DenseMatrix[Double] = {
@@ -115,15 +125,5 @@ object TessellationTree {
             }
         }
         return observations(0 until numberOfObservations, ::)
-    }
-
-    private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): List[Tile] = {
-        val observations = observationsInTile(dataset, parentTile, 0)
-        if (observations.rows > maxObservations) {
-            val childrenTiles = cutFunction(parentTile, observations)
-            return List.concat(cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutFunction))
-        } else {
-            return List(parentTile)
-        }
     }
 }
