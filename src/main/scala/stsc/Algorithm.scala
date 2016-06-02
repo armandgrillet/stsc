@@ -9,6 +9,14 @@ import scala.util.control.Breaks._
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
 object Algorithm {
+    /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
+    *
+    * @param data the observations, one row per observation.
+    * @param tesselation the tessellation tree to cut the workload.
+    * @param tileBorderWidth the border width of the tiles in the tessellation tree.
+    * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
+    * @return the tessellation tree.
+    */
     def cluster(data: DenseMatrix[Double], tesselation: DenseMatrix[Double] = null, radius: Int = 0, min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
         if (min < 2) {
             throw new IllegalArgumentException("The minimum number of clusters cannot be less than 2.");
