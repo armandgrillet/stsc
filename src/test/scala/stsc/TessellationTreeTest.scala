@@ -12,7 +12,7 @@ class TessellationTreeTest extends FlatSpec with Matchers {
         val dataPath = getClass.getResource("/tt0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val tree = TessellationTree.createWithMaxObservations(matrix, 110, 0, stsc.cutUsingContentDimensions)
+        val tree = TessellationTree.createWithMaxObservations(matrix, 110, 0, TessellationTree.cutUsingContentDimensions)
         tree.dimensions should be (2)
         tree.tiles.length should be (4)
 
@@ -25,7 +25,7 @@ class TessellationTreeTest extends FlatSpec with Matchers {
         val dataPath = getClass.getResource("/tt0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val tree = TessellationTree.createWithMaxObservations(matrix, 110, 0, stsc.cutUsingContentDimensions)
+        val tree = TessellationTree.createWithMaxObservations(matrix, 110, 0, TessellationTree.cutUsingContentDimensions)
         tree.toCSV("ttfortt0.csv")
         val loadedTree = TessellationTree.fromCSV("ttfortt0.csv")
         tree.dimensions should be (loadedTree.dimensions)

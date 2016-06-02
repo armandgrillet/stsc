@@ -18,59 +18,9 @@ package stsc
   *
   * The third class of the library is Tile, a list of tiles compose a tessellation tree.
   * A Tile is composed of two DenseVectors representing the minimums and maximums in every dimensions.
-  * For example, if a tessellation tree is in two dimensions and
+  *
+  * Copyright © 2016 Armand Grillet. All rights reserved.
   */
-
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
-
-/** This is the Scaladoc for the package. */
 package object stsc {
-    // Anonymous functions to find on which dimension should the cut of the tile be made.
-    /** Cut a tile in two depending on its dimensions, returns two new tiles.
-      *
-      * If the tile is in two dimensions and the distance between maxs(0) and mins(0) is bigger than
-      * maxs(1) and mins(1) the cut direction will be 0 as we need to cut in the first dimension (0).
-      *
-      * @param tile the parent tile.
-      * @param observations the observations in the tile.
-      */
-    val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
-        val cutDirection = argmax(parent.sizes())
-        val median = breeze.stats.median(observations(::, cutDirection))
 
-        var firstTileMaxs = parent.maxs.copy
-        firstTileMaxs(cutDirection) = median
-        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
-
-        var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
-        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
-
-        (firstTile, secondTile)
-    }: (Tile, Tile)
-
-    /** Cut a tile in two depending on the observations in a tile, returns two new tiles.
-      *
-      * @param tile the parent tile.
-      * @param observations the observations in the tile.
-      */
-    val cutUsingContentDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
-        val minCols = min(observations(::, *)).t
-        val maxCols = max(observations(::, *)).t
-        val dists = abs(maxCols - minCols)
-        val cutDirection = argmax(dists)
-        val median = breeze.stats.median(observations(::, cutDirection))
-
-        var firstTileMaxs = parent.maxs.copy
-        firstTileMaxs(cutDirection) = median
-        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
-
-        var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
-        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
-
-        (firstTile, secondTile)
-    }: (Tile, Tile)
 }

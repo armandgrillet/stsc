@@ -59,7 +59,7 @@ object TessellationTree {
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
     * @return the tessellation tree.
     */
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
+    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
@@ -75,7 +75,7 @@ object TessellationTree {
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
     * @return the tessellation tree.
     */
-    def createWithTilesNumber(dataset: DenseMatrix[Double], tilesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = stsc.cutUsingTileDimensions): TessellationTree = {
+    def createWithTilesNumber(dataset: DenseMatrix[Double], tilesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (tilesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
         val maxObservations = math.ceil(dataset.rows / tilesNumber).toInt
@@ -104,6 +104,53 @@ object TessellationTree {
         }
         return new TessellationTree(dimensions, tiles.toList)
     }
+
+    // Anonymous functions to find on which dimension should the cut of the tile be made.
+    /** Cut a tile in two depending on its dimensions, returns two new tiles.
+      *
+      * If the tile is in two dimensions and the distance between maxs(0) and mins(0) is bigger than
+      * maxs(1) and mins(1) the cut direction will be 0 as we need to cut in the first dimension (0).
+      *
+      * @param tile the parent tile.
+      * @param observations the observations in the tile.
+      */
+    val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
+        val cutDirection = argmax(parent.sizes())
+        val median = breeze.stats.median(observations(::, cutDirection))
+
+        var firstTileMaxs = parent.maxs.copy
+        firstTileMaxs(cutDirection) = median
+        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+
+        var secondTileMins = parent.mins.copy
+        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+
+        (firstTile, secondTile)
+    }: (Tile, Tile)
+
+    /** Cut a tile in two depending on the observations in a tile, returns two new tiles.
+      *
+      * @param tile the parent tile.
+      * @param observations the observations in the tile.
+      */
+    val cutUsingContentDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
+        val minCols = min(observations(::, *)).t
+        val maxCols = max(observations(::, *)).t
+        val dists = abs(maxCols - minCols)
+        val cutDirection = argmax(dists)
+        val median = breeze.stats.median(observations(::, cutDirection))
+
+        var firstTileMaxs = parent.maxs.copy
+        firstTileMaxs(cutDirection) = median
+        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+
+        var secondTileMins = parent.mins.copy
+        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+
+        (firstTile, secondTile)
+    }: (Tile, Tile)
 
     private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): List[Tile] = {
         val observations = observationsInTile(dataset, parentTile, 0)
