@@ -17,7 +17,7 @@ If you include `gr.armand.stsc.TessellationTree`, you can
 also create a tessellation tree to divide a dataset:
 
 ````scala
-scala> import gr.armand.stsc.Algorithm
+scala> import gr.armand.stsc.TessellationTree
 scala> val tree = TessellationTree.createWithMaxObservations(dataset, maxObservationsPerTile, tileBorderWidth)
 ````
 

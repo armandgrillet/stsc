@@ -116,14 +116,14 @@ object TessellationTree {
       */
     val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
         val cutDirection = argmax(parent.sizes())
-        val median = breeze.stats.median(observations(::, cutDirection))
+        val observationsMedian = median(observations(::, cutDirection))
 
         var firstTileMaxs = parent.maxs.copy
-        firstTileMaxs(cutDirection) = median
+        firstTileMaxs(cutDirection) = observationsMedian
         var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        secondTileMins(cutDirection) = observationsMedian + Double.MinPositiveValue // No overlapping
         var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
 
         (firstTile, secondTile)
@@ -139,14 +139,14 @@ object TessellationTree {
         val maxCols = max(observations(::, *)).t
         val dists = abs(maxCols - minCols)
         val cutDirection = argmax(dists)
-        val median = breeze.stats.median(observations(::, cutDirection))
+        val observationsMedian = median(observations(::, cutDirection))
 
         var firstTileMaxs = parent.maxs.copy
-        firstTileMaxs(cutDirection) = median
+        firstTileMaxs(cutDirection) = observationsMedian
         var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = median + Double.MinPositiveValue // No overlapping
+        secondTileMins(cutDirection) = observationsMedian + Double.MinPositiveValue // No overlapping
         var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
 
         (firstTile, secondTile)
