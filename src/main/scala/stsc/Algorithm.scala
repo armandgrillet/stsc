@@ -1,11 +1,11 @@
 package stsc
 
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, diag, eigSym, max, sum, *}
+import breeze.numerics.{abs, cos, pow, sin, sqrt}
+import breeze.stats.mean
 
 import scala.collection.immutable.TreeMap
-import scala.util.control.Breaks._
+import scala.util.control.Breaks.{break, breakable}
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
 object Algorithm {
@@ -73,28 +73,30 @@ object Algorithm {
 
         // In cluster_rotate.m originally
         var qualities: Map[Int, Double] = Map()
+        var clusters = DenseVector(0)
+
         var currentEigenvectors = largestEigenvectors(::, 0 until min)
-        var (quality, clusters, rotatedEigenvectors) = paraspectre(currentEigenvectors)
-        qualities += (min -> quality)
+        var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
+        qualities += (min -> quality) // Add the quality to the map.
 
         var group = 0
         for (group <- min until max) {
             val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd)
-            val (tempQuality, tempClusters, tempRotatedEigenvectors) = paraspectre(currentEigenvectors)
+            val (tempQuality, tempRotatedEigenvectors) = stsc(currentEigenvectors)
             qualities += (group + 1 -> tempQuality)
             rotatedEigenvectors = tempRotatedEigenvectors
 
             if (tempQuality >= quality - 0.002) {
                 quality = tempQuality
-                clusters = tempClusters
+                val absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
+                clusters = argmax(absoluteRotatedEigenvectors(*, ::))
             }
         }
 
         // Order the qualities
         val orderedQualities = TreeMap(qualities.toSeq:_*)
         println(orderedQualities)
-
         return (orderedQualities, clusters)
     }
 
@@ -103,7 +105,7 @@ object Algorithm {
     * @param matrix the matrix that needs to be analyzed, each row being an observation with each column representing one dimension
     * @return the euclidean distance as a dense matrix
     */
-    private def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
+    private[stsc] def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
         var distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
         var distanceVector = DenseVector(0.0).t // The distance vector containing the distance between two vectors.
 
@@ -126,9 +128,9 @@ object Algorithm {
     * @param k k, always 7 in the original paper
     * @return the local scale, the dictance of the Kth nearest neighbor for each observation as a dense vector
     */
-    private def localScale(distanceMatrix: DenseMatrix[Double], k: Int): DenseVector[Double] = {
+    private[stsc] def localScale(distanceMatrix: DenseMatrix[Double], k: Int): DenseVector[Double] = {
         if (k > distanceMatrix.cols - 1) {
-            throw new IllegalArgumentException("Not enough observations (" + distanceMatrix.cols + ") for k ( " + k + ").")
+            throw new IllegalArgumentException("Not enough observations (" + distanceMatrix.cols + ") for k (" + k + ").")
         } else {
             var localScale = DenseVector.zeros[Double](distanceMatrix.cols)
             var sortedVector = IndexedSeq(0.0)
@@ -143,6 +145,12 @@ object Algorithm {
         }
     }
 
+    /** Returns a locally scaled affinity matrix using a distance matrix and a local scale
+    *
+    * @param distanceMatrix the distance matrix
+    * @param localScale the local scale, the dictance of the Kth nearest neighbor for each observation as a dense vector
+    * @return the locally scaled affinity matrix
+    */
     private def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
         var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
@@ -159,55 +167,55 @@ object Algorithm {
         return affinityMatrix
     }
 
-    // Step 5 of the self-tuning spectral clustering algorithm.
-    private def paraspectre(eigenvectors: DenseMatrix[Double]): (Double, DenseVector[Int], DenseMatrix[Double]) = {
-        val dims = eigenvectors.cols
-        val data = eigenvectors.rows
-        val angles = (dims * (dims - 1) / 2).toInt
-
-        val maxIterations = 200
-
-        var nablaJ, quality = 0.0
+    //
+    /** Step 5 of the self-tuning spectral clustering algorithm, recovery the rotation R whiwh best align the eigenvectors.
+    *
+    * @param eigenvectors the eigenvectors
+    * @return the quality of the best rotation and the linked dense matrix.
+    */
+    private def stsc(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
+        var nablaJ, quality = 0.0 // Variables used to recover the aligning rotation.
         var newQuality, old1Quality, old2Quality = 0.0 // Variables to compute the descend through true derivative.
         var qualityUp, qualityDown = 0.0 // Variables to descend through numerical derivative.
-        var iter, d = 0
+
         var evRot = DenseMatrix.zeros[Double](0, 0)
 
-        var theta, thetaNew = DenseVector.zeros[Double](angles)
+        var theta, thetaNew = DenseVector.zeros[Double](angles(eigenvectors))
 
         quality = evaluateQuality(eigenvectors)
         old1Quality = quality
         old2Quality = quality
 
+        var i, j = 0
         breakable {
-            for (iter <- 1 to maxIterations) {
-                for (d <- 0 until angles) {
+            for (i <- 1 to 200) { // Max iterations = 200, as in the original paper.
+                for (j <- 0 until angles(eigenvectors)) {
                     val alpha = 0.1
                     // move up
-                    thetaNew(d) = theta(d) + alpha
+                    thetaNew(j) = theta(j) + alpha
                     evRot = rotateGivens(eigenvectors, thetaNew)
                     qualityUp = evaluateQuality(evRot)
 
                     // move down
-                    thetaNew(d) = theta(d) - alpha
+                    thetaNew(j) = theta(j) - alpha
                     evRot = rotateGivens(eigenvectors, thetaNew)
                     qualityDown = evaluateQuality(evRot)
 
                     // update only if at least one of them is better
-                    if( qualityUp > quality || qualityDown > quality){
-                        if( qualityUp > qualityDown ){
-                            theta(d) = theta(d) + alpha
-                            thetaNew(d) = theta(d)
+                    if (qualityUp > quality || qualityDown > quality) {
+                        if (qualityUp > qualityDown) {
+                            theta(j) = theta(j) + alpha
+                            thetaNew(j) = theta(j)
                             quality = qualityUp
                         } else {
-                            theta(d) = theta(d) - alpha
-                            thetaNew(d) = theta(d)
+                            theta(j) = theta(j) - alpha
+                            thetaNew(j) = theta(j)
                             quality = qualityDown
                         }
                     }
                 }
 
-                if (iter > 2 && ((quality - old2Quality) < 0.001)) {
+                if (i > 2 && ((quality - old2Quality) < 0.001)) {
                     break
                 }
                 old2Quality = old1Quality
@@ -218,11 +226,9 @@ object Algorithm {
         val finalEvRot = rotateGivens(eigenvectors, thetaNew)
 
         if (quality equals Double.NaN) {
-            return (0, null, finalEvRot)
+            return (0, finalEvRot)
         } else {
-            val absoluteRotatedEigenvectors = abs(finalEvRot)
-            val clusters = argmax(absoluteRotatedEigenvectors(*, ::))
-            return (quality, clusters, finalEvRot)
+            return (quality, finalEvRot)
         }
     }
 

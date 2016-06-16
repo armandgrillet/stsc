@@ -1,5 +1,6 @@
-import stsc.Algorithm
-import org.scalatest._
+package stsc
+
+import org.scalatest.{FlatSpec, Matchers}
 
 import breeze.linalg._
 import breeze.numerics._
@@ -19,6 +20,8 @@ class AlgorithmTest extends FlatSpec with Matchers {
         }
         return keyForMaxValue
     }
+
+    // Global tests.
 
     "The dataset 0" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/0.csv").getPath()
@@ -72,5 +75,53 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         keyForMaxValueWithMargin(clustersQualities) should be (3)
         correctClusters should be (DenseVector(2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    }
+
+    // Unit tests for localScale()
+    "The local scale " should "work with a 4x4 matrix and k = 5 (k is volontarely too big)" in {
+        val distanceMatrix = DenseMatrix((0.0, 4.0, 5.0, 3.0), (4.0, 0.0, 3.0, 5.0), (5.0, 3.0, 0.0, 4.0), (3.0, 5.0, 4.0, 0.0))
+        val e = intercept[IllegalArgumentException] {
+            Algorithm.localScale(distanceMatrix, 5)
+        }
+        e.getMessage should equal ("Not enough observations (" + distanceMatrix.cols + ") for k (5).")
+    }
+
+    "The local scale " should "work with a 4x4 matrix and k = 4 (k is still too big)" in {
+        val distanceMatrix = DenseMatrix((0.0, 4.0, 5.0, 3.0), (4.0, 0.0, 3.0, 5.0), (5.0, 3.0, 0.0, 4.0), (3.0, 5.0, 4.0, 0.0))
+        val e = intercept[IllegalArgumentException] {
+            Algorithm.localScale(distanceMatrix, 4)
+        }
+        e.getMessage should equal ("Not enough observations (" + distanceMatrix.cols + ") for k (4).")
+    }
+
+    "The local scale " should "work with a 4x4 matrix and k = 3" in {
+        val distanceMatrix = DenseMatrix((0.0, 4.0, 5.0, 3.0), (4.0, 0.0, 3.0, 5.0), (5.0, 3.0, 0.0, 4.0), (3.0, 5.0, 4.0, 0.0))
+        val scale = Algorithm.localScale(distanceMatrix, 3)
+        val correctScale = DenseVector(5.0, 5.0, 5.0, 5.0)
+        scale should be (correctScale)
+    }
+
+    "The local scale " should "work with a 4x4 matrix and k = 2" in {
+        val distanceMatrix = DenseMatrix((0.0, 4.0, 5.0, 3.0), (4.0, 0.0, 3.0, 5.0), (5.0, 3.0, 0.0, 4.0), (3.0, 5.0, 4.0, 0.0))
+        val scale = Algorithm.localScale(distanceMatrix, 2)
+        val correctScale = DenseVector(4.0, 4.0, 4.0, 4.0)
+        scale should be (correctScale)
+    }
+
+    // Unit tests for EuclideanDistance()
+    "The Euclidean distance " should "work with a simple 2x2 matrix" in {
+        val initialMatrix = DenseMatrix((1.0, 3.0), (3.0, 3.0))
+        val distanceMatrix = Algorithm.euclideanDistance(initialMatrix)
+        val correctDistanceMatrix = DenseMatrix((0.0, 2.0), (2.0, 0.0))
+
+        distanceMatrix should be (correctDistanceMatrix)
+    }
+
+    "The Euclidean distance " should "work with a 3x3 matrix" in {
+        val initialMatrix = DenseMatrix((-2.0, -2.0), (2.0, -2.0), (2.0, 1.0))
+        val distanceMatrix = Algorithm.euclideanDistance(initialMatrix)
+        val correctDistanceMatrix = DenseMatrix((0.0, 4.0, 5.0), (4.0, 0.0, 3.0), (5.0, 3.0, 0.0))
+
+        distanceMatrix should be (correctDistanceMatrix)
     }
 }
