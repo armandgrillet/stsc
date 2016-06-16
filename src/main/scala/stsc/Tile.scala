@@ -22,7 +22,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       * @param observation the observation to check, represented as a DenseVector.
       * @return if the tile has the observation.
       */
-    def has(observation: DenseVector[Double]): Boolean = {
+    def has(observation: DenseVector[Double], borderWidth: Double = borderWidth): Boolean = {
         if (observation.length != mins.length) { throw new IndexOutOfBoundsException("The observation dimension has to be the same as the tile.") }
         if (observation :< (mins :- borderWidth) == emptyBitVector && observation :> (maxs :+ borderWidth) == emptyBitVector) {
             return true

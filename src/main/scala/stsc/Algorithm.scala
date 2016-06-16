@@ -11,24 +11,30 @@ import scala.util.control.Breaks._
 object Algorithm {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param dataset the dataset to cluster
+    * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
     * @param min the minimum number of clusters in the dataset
     * @param max the maximum number of clusters in the dataset
     * @return a Map of qualities (key = number of clusters, value = quality for this number of clusters) and the clusters for the best quality
     */
     def cluster(dataset: DenseMatrix[Double], min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
-        if (min < 2) {
-            throw new IllegalArgumentException("The minimum number of clusters cannot be less than 2.");
+        // Three possible exceptions: empty dataset, min less than 0, min more than max.
+        if (dataset.rows == 0) {
+            throw new IllegalArgumentException("The dataset does not contains any observations.")
         }
-
-        if (min >= max) {
-            throw new IllegalArgumentException("The minimum number of clusters needs to be strictly inferior compared to the maximum number of clusters.");
+        if (min < 0) {
+            throw new IllegalArgumentException("The minimum number of clusters has to be more than 0.")
+        }
+        if (min > max) {
+            throw new IllegalArgumentException("The minimum number of clusters has to be inferior compared to the maximum number of clusters.")
         }
 
         // Centralize and scale the data.
-        val meanCols = mean(dataset(::, *)).t.toDenseMatrix
-        var matrix = (dataset - vertStack(meanCols, dataset.rows))
-        matrix /= breeze.linalg.max(abs(matrix))
+        val meanCols = mean(dataset(::, *)) // Create a dense matrix containing the mean of each column
+        val tempMatrix = DenseMatrix.tabulate(dataset.rows, dataset.cols) { // A temporary matrix representing the dataset - the mean of each column.
+            case (i, j) => dataset(i, j) - meanCols(j)
+        }
+        val maxTempMatrix = breeze.linalg.max(abs(tempMatrix))
+        var matrix = tempMatrix / maxTempMatrix // The centralized matrix.
 
         // Compute local scale (step 1).
         val distances = euclideanDistance(matrix)
@@ -36,12 +42,10 @@ object Algorithm {
 
         // Build locally scaled affinity matrix (step 2).
         val locallyScaledA = locallyScaledAffinityMatrix(distances, locScale)
-
         // Build the normalized affinity matrix (step 3)
         val diagonalMatrix = diag(pow(sum(locallyScaledA(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
         var normalizedA = diagonalMatrix * locallyScaledA * diagonalMatrix
 
-        // We only have a
         var row, col = 0
         for (row <- 0 until normalizedA.rows) {
             for (col <- row + 1 until normalizedA.cols) {
@@ -49,27 +53,33 @@ object Algorithm {
             }
         }
 
-        // Compute the largest eigenvectors
-        val eigenstuff = eigSym(normalizedA)
-        var eigenvectors = DenseMatrix.zeros[Double](eigenstuff.eigenvectors.rows, max)
-        val biggestEigenvalues = eigenstuff.eigenvalues(-1 to -max by -1)
+        // val diagonalVector = pow(sum(locallyScaledA(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
+        // var normalizedA2 = DenseMatrix.zeros[Double](locallyScaledA.rows, locallyScaledA.cols)
+        //
+        // for (row <- 0 until normalizedA2.rows) {
+        //     for (col <- row + 1 until normalizedA2.cols) {
+        //         normalizedA2(row, col) = diagonalVector(row) * locallyScaledA(row, col) * diagonalVector(row)
+        //         normalizedA2(col, row) = normalizedA2(row, col)
+        //     }
+        // }
+        //
+        // println(normalizedA2)
 
-        var i = 0
-        for (i <- 0 until max) {
-            for (row <- 0 until eigenstuff.eigenvectors.rows) {
-                eigenvectors(row, i) = eigenstuff.eigenvectors(row, -(1 + i))
-            }
+        // Compute the largest eigenvectors
+        val eigenvectors = eigSym(normalizedA).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
+        val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, max) {
+            case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
         }
 
         // In cluster_rotate.m originally
         var qualities: Map[Int, Double] = Map()
-        var currentEigenvectors = eigenvectors(::, 0 until min)
+        var currentEigenvectors = largestEigenvectors(::, 0 until min)
         var (quality, clusters, rotatedEigenvectors) = paraspectre(currentEigenvectors)
         qualities += (min -> quality)
 
         var group = 0
         for (group <- min until max) {
-            val eigenvectorToAdd = eigenvectors(::, group).toDenseMatrix.t
+            val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd)
             val (tempQuality, tempClusters, tempRotatedEigenvectors) = paraspectre(currentEigenvectors)
             qualities += (group + 1 -> tempQuality)
@@ -87,42 +97,45 @@ object Algorithm {
         return (orderedQualities, clusters)
     }
 
-    private def vertStack(matrix: DenseMatrix[Double], iterations: Int): DenseMatrix[Double] = {
-        var stack = matrix
-        var i = 0
-        while (i < iterations - 1) {
-            stack = DenseMatrix.vertcat(stack, matrix)
-            i += 1
-        }
-        return stack
-    }
-
+    /** Returns the euclidean distance of a given dense matrix.
+    *
+    * @param matrix the matrix that needs to be analyzed, each row being an observation with each column representing one dimension
+    * @return the euclidean distance as a dense matrix
+    */
     private def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
         var distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
         var distanceVector = DenseVector(0.0).t // The distance vector containing the distance between two vectors.
 
-        (0 until matrix.rows).map{ mainRow =>
-            (mainRow + 1 until matrix.rows).map{ secondRow =>
-                distanceVector = matrix(mainRow, ::) - matrix(secondRow,::) // Xi - Xj | Yi - Yj
+        var i, j = 0
+        for (i <- 0 until matrix.rows) {
+            for (j <- i + 1 until matrix.rows) {
+                distanceVector = matrix(i, ::) - matrix(j, ::) // Xi - Xj | Yi - Yj
                 distanceVector *= distanceVector // (Xi - Xj)² | (Yi - Yj)²
-                distanceMatrix(mainRow, secondRow) = sqrt(sum(distanceVector)) // √(Xi - Xj)² + (Yi - Yj)² + ...
-                distanceMatrix(secondRow, mainRow) = distanceMatrix(mainRow, secondRow)
+                distanceMatrix(i, j) = sqrt(sum(distanceVector)) // √(Xi - Xj)² + (Yi - Yj)² + ...
+                distanceMatrix(j, i) = distanceMatrix(i, j) // Symmetric matrix.
             }
         }
 
         return distanceMatrix
     }
 
+    /** Returns the local scale as defined in the original paper, a vector containing the Kth nearest neighbor for each observation.
+    *
+    * @param distanceMatrix the distance matrix used to get the Kth nearest neighbor
+    * @param k k, always 7 in the original paper
+    * @return the local scale, the dictance of the Kth nearest neighbor for each observation as a dense vector
+    */
     private def localScale(distanceMatrix: DenseMatrix[Double], k: Int): DenseVector[Double] = {
         if (k > distanceMatrix.cols - 1) {
-            return max(distanceMatrix(*, ::)) // Maximum distance.
+            throw new IllegalArgumentException("Not enough observations (" + distanceMatrix.cols + ") for k ( " + k + ").")
         } else {
             var localScale = DenseVector.zeros[Double](distanceMatrix.cols)
             var sortedVector = IndexedSeq(0.0)
 
-            (0 until distanceMatrix.cols).map{col =>
-                sortedVector = distanceMatrix(::, col).toArray.sorted
-                localScale(col) = sortedVector(k) // Kth nearest distance., the 0th neighbor is always 0 and sortedVector(1) is the first neighbor
+            var i = 0
+            for (i <- 0 until distanceMatrix.cols) {
+                sortedVector = distanceMatrix(::, i).toArray.sorted // Ordered distances.
+                localScale(i) = sortedVector(k) // Kth nearest distance, the 0th neighbor is always 0 and sortedVector(1) is the first neighbor
             }
 
             return localScale
@@ -132,12 +145,13 @@ object Algorithm {
     private def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
         var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
-        (0 until distanceMatrix.rows).map{ row =>
-            (row + 1 until distanceMatrix.cols).map{ col =>
-                affinityMatrix(row, col) = -scala.math.pow(distanceMatrix(row, col), 2) // -d(si, sj)²
-                affinityMatrix(row, col) /= (localScale(row) * localScale(col)) // -d(si, sj)² / lambi * lambj
-                affinityMatrix(row, col) = scala.math.exp(affinityMatrix(row, col)) // exp(-d(si, sj)² / lambi * lambj)
-                affinityMatrix(col, row) = affinityMatrix(row, col)
+        var i, j = 0
+        for (i <- 0 until distanceMatrix.rows) {
+            for (j <- i + 1 until distanceMatrix.rows) {
+                affinityMatrix(i, j) = -scala.math.pow(distanceMatrix(i, j), 2) // -d(si, sj)²
+                affinityMatrix(i, j) /= (localScale(i) * localScale(j)) // -d(si, sj)² / lambi * lambj
+                affinityMatrix(i, j) = scala.math.exp(affinityMatrix(i, j)) // exp(-d(si, sj)² / lambi * lambj)
+                affinityMatrix(j, i) = affinityMatrix(i, j)
             }
         }
 
