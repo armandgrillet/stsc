@@ -5,6 +5,7 @@ import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
 
 import scala.collection.immutable.TreeMap
+import scala.math.{max => _} // Remove this import to use breeze.linalg.max instead.
 import scala.util.control.Breaks.{break, breakable}
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
@@ -12,19 +13,19 @@ object Algorithm {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
     * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
-    * @param min the minimum number of clusters in the dataset
-    * @param max the maximum number of clusters in the dataset
+    * @param minClusters the minimum number of clusters in the dataset
+    * @param maxClusters the maximum number of clusters in the dataset
     * @return a Map of qualities (key = number of clusters, value = quality for this number of clusters) and the clusters for the best quality
     */
-    def cluster(dataset: DenseMatrix[Double], min: Int = 2, max: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
-        // Three possible exceptions: empty dataset, min less than 0, min more than max.
+    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
+        // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
         if (dataset.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
         }
-        if (min < 0) {
+        if (minClusters < 0) {
             throw new IllegalArgumentException("The minimum number of clusters has to be more than 0.")
         }
-        if (min > max) {
+        if (minClusters > maxClusters) {
             throw new IllegalArgumentException("The minimum number of clusters has to be inferior compared to the maximum number of clusters.")
         }
 
@@ -33,41 +34,41 @@ object Algorithm {
         val tempMatrix = DenseMatrix.tabulate(dataset.rows, dataset.cols) { // A temporary matrix representing the dataset - the mean of each column.
             case (i, j) => dataset(i, j) - meanCols(j)
         }
-        val maxTempMatrix = breeze.linalg.max(abs(tempMatrix))
+        val maxTempMatrix = max(abs(tempMatrix))
         var matrix = tempMatrix / maxTempMatrix // The centralized matrix.
 
         // Compute local scale (step 1).
         val distances = euclideanDistance(matrix)
-        val locScale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
+        val scale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
 
         // Build locally scaled affinity matrix (step 2).
-        val locallyScaledA = locallyScaledAffinityMatrix(distances, locScale)
+        val scaledMatrix = locallyScaledAffinityMatrix(distances, scale)
         // Build the normalized affinity matrix (step 3)
-        val diagonalMatrix = diag(pow(sum(locallyScaledA(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
-        var normalizedA = diagonalMatrix * locallyScaledA * diagonalMatrix
+        val diagScaledMatrix = diag(pow(sum(scaledMatrix(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
+        var normalizedMatrix = diagScaledMatrix * scaledMatrix * diagScaledMatrix
 
         var row, col = 0
-        for (row <- 0 until normalizedA.rows) {
-            for (col <- row + 1 until normalizedA.cols) {
-                normalizedA(col, row) = normalizedA(row, col)
+        for (row <- 0 until normalizedMatrix.rows) {
+            for (col <- row + 1 until normalizedMatrix.cols) {
+                normalizedMatrix(col, row) = normalizedMatrix(row, col)
             }
         }
 
-        // val diagonalVector = pow(sum(locallyScaledA(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
-        // var normalizedA2 = DenseMatrix.zeros[Double](locallyScaledA.rows, locallyScaledA.cols)
+        // val diagonalVector = pow(sum(scaledMatrix(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
+        // var normalizedMatrix2 = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
         //
-        // for (row <- 0 until normalizedA2.rows) {
-        //     for (col <- row + 1 until normalizedA2.cols) {
-        //         normalizedA2(row, col) = diagonalVector(row) * locallyScaledA(row, col) * diagonalVector(row)
-        //         normalizedA2(col, row) = normalizedA2(row, col)
+        // for (row <- 0 until normalizedMatrix2.rows) {
+        //     for (col <- row + 1 until normalizedMatrix2.cols) {
+        //         normalizedMatrix2(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(row)
+        //         normalizedMatrix2(col, row) = normalizedMatrix2(row, col)
         //     }
         // }
         //
-        // println(normalizedA2)
+        // println(normalizedMatrix2)
 
         // Compute the largest eigenvectors
-        val eigenvectors = eigSym(normalizedA).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
-        val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, max) {
+        val eigenvectors = eigSym(normalizedMatrix).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
+        val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, maxClusters) {
             case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
         }
 
@@ -75,12 +76,12 @@ object Algorithm {
         var qualities: Map[Int, Double] = Map()
         var clusters = DenseVector(0)
 
-        var currentEigenvectors = largestEigenvectors(::, 0 until min)
+        var currentEigenvectors = largestEigenvectors(::, 0 until minClusters)
         var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
-        qualities += (min -> quality) // Add the quality to the map.
+        qualities += (minClusters -> quality) // Add the quality to the map.
 
         var group = 0
-        for (group <- min until max) {
+        for (group <- minClusters until maxClusters) {
             val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd)
             val (tempQuality, tempRotatedEigenvectors) = stsc(currentEigenvectors)
