@@ -93,6 +93,7 @@ object Algorithm {
 
         // Order the qualities
         val orderedQualities = TreeMap(qualities.toSeq:_*)
+        println(orderedQualities)
 
         return (orderedQualities, clusters)
     }
@@ -159,29 +160,10 @@ object Algorithm {
     }
 
     // Step 5 of the self-tuning spectral clustering algorithm.
-
-    private var dims = 0
-    private var data = 0
-    private var angles = 0
-    private var ik, jk = DenseVector.zeros[Int](0)
-    private var ev = DenseMatrix.zeros[Double](0, 0)
-
     private def paraspectre(eigenvectors: DenseMatrix[Double]): (Double, DenseVector[Int], DenseMatrix[Double]) = {
-        dims = eigenvectors.cols
-        data = eigenvectors.rows
-        angles = (dims * (dims - 1) / 2).toInt
-        ik = DenseVector.zeros[Int](angles)
-        jk = DenseVector.zeros[Int](angles)
-        ev = eigenvectors
-
-        var i, j, k = 0
-        for (i <- 0 until dims) {
-            for (j <- (i + 1) until dims) {
-                ik(k) = i
-                jk(k) = j
-                k += 1
-            }
-        }
+        val dims = eigenvectors.cols
+        val data = eigenvectors.rows
+        val angles = (dims * (dims - 1) / 2).toInt
 
         val maxIterations = 200
 
@@ -193,7 +175,7 @@ object Algorithm {
 
         var theta, thetaNew = DenseVector.zeros[Double](angles)
 
-        quality = evaluateQuality(ev)
+        quality = evaluateQuality(eigenvectors)
         old1Quality = quality
         old2Quality = quality
 
@@ -203,12 +185,12 @@ object Algorithm {
                     val alpha = 0.1
                     // move up
                     thetaNew(d) = theta(d) + alpha
-                    evRot = rotateGivens(thetaNew)
+                    evRot = rotateGivens(eigenvectors, thetaNew)
                     qualityUp = evaluateQuality(evRot)
 
                     // move down
                     thetaNew(d) = theta(d) - alpha
-                    evRot = rotateGivens(thetaNew)
+                    evRot = rotateGivens(eigenvectors, thetaNew)
                     qualityDown = evaluateQuality(evRot)
 
                     // update only if at least one of them is better
@@ -233,42 +215,53 @@ object Algorithm {
             }
         }
 
-        val finalEvRot = rotateGivens(thetaNew)
+        val finalEvRot = rotateGivens(eigenvectors, thetaNew)
 
         if (quality equals Double.NaN) {
             return (0, null, finalEvRot)
         } else {
-            val clusts = clusters(finalEvRot)
-            return (quality, clusts, finalEvRot)
+            val absoluteRotatedEigenvectors = abs(finalEvRot)
+            val clusters = argmax(absoluteRotatedEigenvectors(*, ::))
+            return (quality, clusters, finalEvRot)
         }
     }
 
-    private def clusters(rotatedEigenvectors: DenseMatrix[Double]): DenseVector[Int] = {
-        val absEigenvectors = abs(rotatedEigenvectors)
-        return argmax(absEigenvectors(*, ::))
+    private def angles(matrix: DenseMatrix[Double]): Int = {
+        return (matrix.cols * (matrix.cols - 1) / 2).toInt
     }
 
     private def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
         // Take the square of all entries and find the max of each row
-        var squareMatrix = pow(matrix, 2)
+        var squareMatrix = matrix :* matrix
         val maxValues = max(squareMatrix(*, ::)) // Max of each row
 
         val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of (sum of each row divided by max of each row).
 
-        return 1.0 - (cost / data - 1.0) / dims
+        return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
     }
 
-    private def rotateGivens(theta: DenseVector[Double]): DenseMatrix[Double] = {
-        val g = uAB(theta, 0, angles - 1)
-        return ev * g
+    private def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
+        val g = uAB(theta, 0, angles(matrix) - 1, matrix.cols, angles(matrix))
+        return matrix * g
     }
 
-    private def uAB(theta: DenseVector[Double], a: Int, b: Int): DenseMatrix[Double] = {
-        var i, k = 0
+    private def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int, angles: Int): DenseMatrix[Double] = {
         var uab = DenseMatrix.eye[Double](dims)
 
         if (b < a) {
             return uab
+        }
+
+        val ik = DenseVector.zeros[Int](angles)
+        val jk = DenseVector.zeros[Int](angles)
+
+        var i, j, k = 0
+        for (i <- 0 until dims) {
+            for (j <- (i + 1) until dims) {
+                ik(k) = i
+                jk(k) = j
+                k += 1
+            }
         }
 
         var tt, uIk = 0.0
