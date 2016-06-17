@@ -4,8 +4,7 @@ import breeze.linalg.{DenseMatrix, DenseVector, argmax, diag, eigSym, max, sum, 
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
 
-import scala.collection.immutable.TreeMap
-import scala.math.{max => _} // Remove this import to use breeze.linalg.max instead.
+import scala.collection.immutable.SortedMap
 import scala.util.control.Breaks.{break, breakable}
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
@@ -34,8 +33,7 @@ object Algorithm {
         val tempMatrix = DenseMatrix.tabulate(dataset.rows, dataset.cols) { // A temporary matrix representing the dataset - the mean of each column.
             case (i, j) => dataset(i, j) - meanCols(j)
         }
-        val maxTempMatrix = max(abs(tempMatrix))
-        var matrix = tempMatrix / maxTempMatrix // The centralized matrix.
+        var matrix = tempMatrix / max(abs(tempMatrix)) // The centralized matrix.
 
         // Compute local scale (step 1).
         val distances = euclideanDistance(matrix)
@@ -43,6 +41,7 @@ object Algorithm {
 
         // Build locally scaled affinity matrix (step 2).
         val scaledMatrix = locallyScaledAffinityMatrix(distances, scale)
+
         // Build the normalized affinity matrix (step 3)
         val diagScaledMatrix = diag(pow(sum(scaledMatrix(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
         var normalizedMatrix = diagScaledMatrix * scaledMatrix * diagScaledMatrix
@@ -72,22 +71,22 @@ object Algorithm {
             case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
         }
 
-        // In cluster_rotate.m originally
-        var qualities: Map[Int, Double] = Map()
-        var clusters = DenseVector(0)
+        var qualities: Map[Int, Double] = Map() // The qualities, key = number of clusters and value = quality
+        var clusters = DenseVector(0) // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
 
-        var currentEigenvectors = largestEigenvectors(::, 0 until minClusters)
+        var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
         var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
         qualities += (minClusters -> quality) // Add the quality to the map.
 
         var group = 0
-        for (group <- minClusters until maxClusters) {
-            val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t
-            currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd)
+        for (group <- minClusters until maxClusters) { // We get the quality of stsc for each possible number of clusters.
+            val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t // One new eigenvector at each turn.
+            currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
             val (tempQuality, tempRotatedEigenvectors) = stsc(currentEigenvectors)
-            qualities += (group + 1 -> tempQuality)
-            rotatedEigenvectors = tempRotatedEigenvectors
+            qualities += (group + 1 -> tempQuality) // Add the quality to the map.
+            rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
+            // TODO: batch comparison of the qualities.
             if (tempQuality >= quality - 0.002) {
                 quality = tempQuality
                 val absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
@@ -95,9 +94,7 @@ object Algorithm {
             }
         }
 
-        // Order the qualities
-        val orderedQualities = TreeMap(qualities.toSeq:_*)
-        println(orderedQualities)
+        val orderedQualities = SortedMap(qualities.toSeq:_*) // Order the qualities.
         return (orderedQualities, clusters)
     }
 
@@ -179,7 +176,7 @@ object Algorithm {
         var newQuality, old1Quality, old2Quality = 0.0 // Variables to compute the descend through true derivative.
         var qualityUp, qualityDown = 0.0 // Variables to descend through numerical derivative.
 
-        var evRot = DenseMatrix.zeros[Double](0, 0)
+        var rotatedEigenvectors = DenseMatrix.zeros[Double](0, 0)
 
         var theta, thetaNew = DenseVector.zeros[Double](angles(eigenvectors))
 
@@ -189,20 +186,20 @@ object Algorithm {
 
         var i, j = 0
         breakable {
-            for (i <- 1 to 200) { // Max iterations = 200, as in the original paper.
+            for (i <- 1 to 200) { // Max iterations = 200, as in the original paper code.
                 for (j <- 0 until angles(eigenvectors)) {
                     val alpha = 0.1
-                    // move up
+                    // Move up.
                     thetaNew(j) = theta(j) + alpha
-                    evRot = rotateGivens(eigenvectors, thetaNew)
-                    qualityUp = evaluateQuality(evRot)
+                    rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                    qualityUp = evaluateQuality(rotatedEigenvectors)
 
-                    // move down
+                    // Move down.
                     thetaNew(j) = theta(j) - alpha
-                    evRot = rotateGivens(eigenvectors, thetaNew)
-                    qualityDown = evaluateQuality(evRot)
+                    rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                    qualityDown = evaluateQuality(rotatedEigenvectors)
 
-                    // update only if at least one of them is better
+                    // Update only if at least one of the new quality is better.
                     if (qualityUp > quality || qualityDown > quality) {
                         if (qualityUp > qualityDown) {
                             theta(j) = theta(j) + alpha
@@ -216,6 +213,7 @@ object Algorithm {
                     }
                 }
 
+                // If the new quality is not that better, we end the rotation.
                 if (i > 2 && ((quality - old2Quality) < 0.001)) {
                     break
                 }
@@ -224,36 +222,60 @@ object Algorithm {
             }
         }
 
-        val finalEvRot = rotateGivens(eigenvectors, thetaNew)
+        // Last rotation
+        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
 
+        // In rare cases the quality is Double.NaN, we handle this error here.
         if (quality equals Double.NaN) {
-            return (0, finalEvRot)
+            return (0, rotatedEigenvectors)
         } else {
-            return (quality, finalEvRot)
+            return (quality, rotatedEigenvectors)
         }
     }
 
+    /** Return the "angles" of a matrix, as defined in the original paper code.
+    *
+    * @param matrix the matrix to analyze
+    * @return the angles
+    */
     private def angles(matrix: DenseMatrix[Double]): Int = {
         return (matrix.cols * (matrix.cols - 1) / 2).toInt
     }
 
+    /** Return the quality of a given rotation, follow the computation in the original paper code.
+    *
+    * @param matrix the rotation to analyze
+    * @return the quality, the bigger the better (generally less than 1)
+    */
     private def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
         // Take the square of all entries and find the max of each row
         var squareMatrix = matrix :* matrix
-        val maxValues = max(squareMatrix(*, ::)) // Max of each row
-
-        val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of (sum of each row divided by max of each row).
-
+        val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
         return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
     }
 
+    /** Givens rotation of a given matrix
+    *
+    * @param matrix the matrix to rotate
+    * @param theta the angle of the rotation
+    * @return the Givens rotation
+    */
     private def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
         val g = uAB(theta, 0, angles(matrix) - 1, matrix.cols, angles(matrix))
         return matrix * g
     }
 
+    /** Build U(a,b) (check appendix A of the original paper for more info)
+    *
+    * @param theta the angle of the rotation
+    * @param a
+    * @param b
+    * @param dims
+    * @param angles
+    * @return the gradient
+    */
     private def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int, angles: Int): DenseMatrix[Double] = {
-        var uab = DenseMatrix.eye[Double](dims)
+        var uab = DenseMatrix.eye[Double](dims) // Create an empty identity matrix.
 
         if (b < a) {
             return uab
