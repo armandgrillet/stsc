@@ -4,7 +4,6 @@ import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvread, csvwrite, max, 
 import breeze.numerics._
 import breeze.stats.median
 
-import java.lang.Math.nextAfter
 import java.io.File
 import scala.collection.mutable.ListBuffer
 
@@ -44,20 +43,49 @@ class TessellationTree(val dimensions: Int, val tiles: TileTree) {
 
     /** Returns the tile(s) owning a given observation.
     *
-    * @param observation the observation to check, represented as a DenseVector.
+    * @param observation the observation to check, represented as a DenseVector where every value is the coordinates in a dimension.
     * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
     */
     def owningTiles(observation: DenseVector[Double]): List[Tile] = {
         var owningTiles = ListBuffer.empty[Tile]
-        // for (tile <- tiles) {
-        //     if (tile.has(observation)) {
-        //         owningTiles += tile
-        //         if (owningTiles.length == 1 && tile.hasDeeply(observation)) {
-        //             return owningTiles.toList
-        //         }
-        //     }
-        // }
+
+        def owningTilesHelper(tileTree: TileTree) {
+            if (tileTree.isLeaf) {
+                owningTiles += tileTree.value
+            } else {
+                // The observation can be in multiple tiles thus we test for the left and the right tile.
+                if (tileTree.left.value.has(observation)) {
+                    owningTilesHelper(tileTree.left)
+                }
+                if (tileTree.right.value.has(observation)) {
+                    owningTilesHelper(tileTree.right)
+                }
+            }
+        }
+
+        owningTilesHelper(tiles)
         return owningTiles.toList
+    }
+
+    /** Returns the tile owning a given observation, must be within the strict edges of the tile.
+    *
+    * @param observation the observation to check, represented as a DenseVector where every value is the coordinates in a dimension.
+    * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
+    */
+    def owningTile(observation: DenseVector[Double]): Tile = {
+        def owningTileHelper(tileTree: TileTree): Tile = {
+            if (tileTree.isLeaf) {
+                return tileTree.value
+            } else {
+                if (tileTree.left.value.has(observation, 0)) {
+                    return owningTileHelper(tileTree.left)
+                } else {
+                    return owningTileHelper(tileTree.right)
+                }
+            }
+        }
+
+        return owningTileHelper(tiles)
     }
 }
 
@@ -146,7 +174,7 @@ object TessellationTree {
         var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = nextAfter(observationsMedian, observationsMedian + 1) // No overlapping
+        secondTileMins(cutDirection) = observationsMedian
         var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
 
         (firstTile, secondTile)
@@ -169,7 +197,7 @@ object TessellationTree {
         var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = nextAfter(observationsMedian, observationsMedian + 1) // No overlapping
+        secondTileMins(cutDirection) = observationsMedian
         var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
 
         (firstTile, secondTile)

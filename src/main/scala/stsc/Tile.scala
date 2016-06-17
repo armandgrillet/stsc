@@ -5,6 +5,7 @@ import breeze.numerics._
 import breeze.stats._
 
 /** A tile to contain observations. Can be of any dimensions.
+  * BE CAREFUL ABOUT THE EDGES: if you have a Tile(DenseVector(0), DenseVector(10), 0), an observation with x = 0 will be in the tile but NOT a tile with x = 10
   *
   * @constructor create a new tile with a list of minimums, maximums and a border width.
   * @param mins the minimums of the tile in every dimension.
@@ -24,7 +25,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       */
     def has(observation: DenseVector[Double], borderWidth: Double = borderWidth): Boolean = {
         if (observation.length != mins.length) { throw new IndexOutOfBoundsException("The observation dimension has to be the same as the tile.") }
-        if (observation :< (mins :- borderWidth) == emptyBitVector && observation :> (maxs :+ borderWidth) == emptyBitVector) {
+        if (observation :< (mins :- borderWidth) == emptyBitVector && observation :> (maxs :+ borderWidth) == emptyBitVector && (observation :== (maxs :- borderWidth)) == emptyBitVector) {
             return true
         }
         return false
@@ -36,7 +37,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       * @return if the tile has the observation deeply in it.
       */
     def hasDeeply(observation: DenseVector[Double]): Boolean = {
-        if ((observation :< (mins :+ borderWidth)) == emptyBitVector && (observation :> (maxs :- borderWidth)) == emptyBitVector) {
+        if ((observation :< (mins :+ borderWidth)) == emptyBitVector && (observation :> (maxs :- borderWidth)) == emptyBitVector && (observation :== (maxs :- borderWidth)) == emptyBitVector) {
             return true
         }
         return false
