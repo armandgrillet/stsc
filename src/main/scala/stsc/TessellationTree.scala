@@ -1,7 +1,7 @@
 package stsc
 
 import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvread, csvwrite, max, min, sum, *}
-import breeze.numerics._
+import breeze.numerics.abs
 import breeze.stats.median
 
 import java.io.File

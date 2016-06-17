@@ -1,8 +1,7 @@
 package stsc
 
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
+import breeze.linalg.{BitVector, DenseMatrix, DenseVector, Transpose}
+import breeze.numerics.abs
 
 /** A tile to contain observations. Can be of any dimensions.
   * BE CAREFUL ABOUT THE EDGES: if you have a Tile(DenseVector(0), DenseVector(10), 0), an observation with x = 0 will be in the tile but NOT a tile with x = 10
