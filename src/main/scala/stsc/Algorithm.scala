@@ -43,15 +43,33 @@ object Algorithm {
         val scaledMatrix = locallyScaledAffinityMatrix(distances, scale)
 
         // Build the normalized affinity matrix (step 3)
-        val diagScaledMatrix = diag(pow(sum(scaledMatrix(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
-        var normalizedMatrix = diagScaledMatrix * scaledMatrix * diagScaledMatrix
+        def oldWayToGetNormalizedMatrix(): DenseMatrix[Double] = {
+            val diagScaledMatrix = diag(pow(sum(scaledMatrix(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
+            var normalizedMatrix = diagScaledMatrix * scaledMatrix * diagScaledMatrix
 
-        var row, col = 0
-        for (row <- 0 until normalizedMatrix.rows) {
-            for (col <- row + 1 until normalizedMatrix.cols) {
-                normalizedMatrix(col, row) = normalizedMatrix(row, col)
+            var row, col = 0
+            for (row <- 0 until normalizedMatrix.rows) {
+                for (col <- row + 1 until normalizedMatrix.cols) {
+                    normalizedMatrix(col, row) = normalizedMatrix(row, col)
+                }
             }
+            return normalizedMatrix
         }
+
+        def newWayToGetNormalizedMatrix(): DenseMatrix[Double] = {
+            val diagonalVector = pow(sum(scaledMatrix(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
+            var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
+
+            for (row <- 0 until normalizedMatrix.rows) {
+                for (col <- row + 1 until normalizedMatrix.cols) {
+                    normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(row)
+                    normalizedMatrix(col, row) = normalizedMatrix(row, col)
+                }
+            }
+            return normalizedMatrix
+        }
+
+        val normalizedMatrix = oldWayToGetNormalizedMatrix()
 
         // val diagonalVector = pow(sum(scaledMatrix(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
         // var normalizedMatrix2 = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
@@ -189,29 +207,48 @@ object Algorithm {
         breakable {
             for (i <- 1 to 200) { // Max iterations = 200, as in the original paper code.
                 for (j <- 0 until angles(eigenvectors)) {
-                    val alpha = 0.1
-                    // Move up.
-                    thetaNew(j) = theta(j) + alpha
-                    rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                    qualityUp = evaluateQuality(rotatedEigenvectors)
+                    def numericalDerivative() {
+                        val alpha = 0.1
+                        // Move up.
+                        thetaNew(j) = theta(j) + alpha
+                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                        qualityUp = evaluateQuality(rotatedEigenvectors)
 
-                    // Move down.
-                    thetaNew(j) = theta(j) - alpha
-                    rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                    qualityDown = evaluateQuality(rotatedEigenvectors)
+                        // Move down.
+                        thetaNew(j) = theta(j) - alpha
+                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                        qualityDown = evaluateQuality(rotatedEigenvectors)
 
-                    // Update only if at least one of the new quality is better.
-                    if (qualityUp > quality || qualityDown > quality) {
-                        if (qualityUp > qualityDown) {
-                            theta(j) = theta(j) + alpha
-                            thetaNew(j) = theta(j)
-                            quality = qualityUp
-                        } else {
-                            theta(j) = theta(j) - alpha
-                            thetaNew(j) = theta(j)
-                            quality = qualityDown
+                        // Update only if at least one of the new quality is better.
+                        if (qualityUp > quality || qualityDown > quality) {
+                            if (qualityUp > qualityDown) {
+                                theta(j) = theta(j) + alpha
+                                thetaNew(j) = theta(j)
+                                quality = qualityUp
+                            } else {
+                                theta(j) = theta(j) - alpha
+                                thetaNew(j) = theta(j)
+                                quality = qualityDown
+                            }
                         }
                     }
+
+                    def trueDerivative() {
+                        val alpha = 1.0
+                        nablaJ = evaluateQualityGradient(theta, j, eigenvectors)
+                        thetaNew(j) = theta(j) - alpha * nablaJ
+                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                        newQuality = evaluateQuality(rotatedEigenvectors)
+
+                        if (newQuality > quality) {
+                            theta(j) = thetaNew(j)
+                            quality = newQuality
+                        } else {
+                            thetaNew(j) = theta(j)
+                        }
+                    }
+
+                    numericalDerivative()
                 }
 
                 // If the new quality is not that better, we end the rotation.
@@ -253,6 +290,49 @@ object Algorithm {
         var squareMatrix = matrix :* matrix
         val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
         return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
+    }
+
+    private def evaluateQualityGradient(theta: DenseVector[Double], angle: Int, matrix: DenseMatrix[Double]): Double = {
+        val ik = DenseVector.zeros[Int](angles(matrix))
+        val jk = DenseVector.zeros[Int](angles(matrix))
+
+        var i, j, k = 0
+        for (i <- 0 until matrix.cols) {
+            for (j <- (i + 1) until matrix.cols) {
+                ik(k) = i
+                jk(k) = j
+                k += 1
+            }
+        }
+
+        // Build V, U, A
+        var vForAngle = DenseMatrix.zeros[Double](matrix.cols, matrix.cols)
+        vForAngle(ik(angle),ik(angle)) = -sin(theta(angle))
+        vForAngle(ik(angle),jk(angle)) = cos(theta(angle))
+        vForAngle(jk(angle),ik(angle)) = -cos(theta(angle))
+        vForAngle(jk(angle),jk(angle)) = -sin(theta(angle))
+        val u1 = uAB(theta, 1, angle - 1, matrix.cols, angles(matrix))
+        val u2 = uAB(theta, angle + 1, angles(matrix) -1, matrix.cols, angles(matrix))
+
+        val a = matrix * u1 * vForAngle * u2
+
+        val y = rotateGivens(matrix, theta)
+
+        val maxValues = max(y(*, ::)) // Max of each row
+        val maxIndexCol = argmax(y(*, ::))
+
+        // Compute gradient
+        var nablaJ, tmp1, tmp2 = 0.0
+        for (i <- 0 until matrix.rows) { // Loop over all rows
+            for (j <- 0 until matrix.cols) { // Loop over all columns
+                tmp1 = a(i, j) * y(i, j) / (maxValues(i) * maxValues(i))
+                tmp2 = a(i, maxIndexCol(i)) * pow(y(i, j), 2) / pow(maxValues(i), 3)
+                nablaJ += tmp1 - tmp2
+            }
+        }
+        nablaJ = 2 * nablaJ / matrix.rows / matrix.cols
+
+        return nablaJ
     }
 
     /** Givens rotation of a given matrix

@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseVector}
+import breeze.linalg.DenseVector
 
 import org.scalatest.{FlatSpec, Matchers}
 
