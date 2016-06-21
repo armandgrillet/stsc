@@ -76,7 +76,8 @@ object Algorithm {
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
         var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
         qualities += (minClusters -> quality) // Add the quality to the map.
-        var clusters = argmax(rotatedEigenvectors(*, ::))
+        var absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
+        var clusters = argmax(absoluteRotatedEigenvectors(*, ::))
 
         var group = 0
         for (group <- minClusters until maxClusters) { // We get the quality of stsc for each possible number of clusters.
@@ -89,7 +90,7 @@ object Algorithm {
             // TODO: batch comparison of the qualities.
             if (tempQuality >= quality - 0.002) {
                 quality = tempQuality
-                val absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
+                absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
                 clusters = argmax(absoluteRotatedEigenvectors(*, ::))
             }
         }

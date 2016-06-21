@@ -22,12 +22,15 @@ class AlgorithmTest extends FlatSpec with Matchers {
     }
 
     // Unit tests/
-    "The algorithl" should "work when the minimum and maximum number of clusters are the same" in {
-        val dataPath = getClass.getResource("/0.csv").getPath()
+    "The algorithm" should "work when the minimum and maximum number of clusters are the same" in {
+        val dataPath = getClass.getResource("/near.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix, 2, 2)
+
         keyForMaxValueWithMargin(clustersQualities) should be (2)
+        correctClusters should not be DenseVector.zeros[Int](matrix.rows)
+        correctClusters should not be DenseVector.ones[Int](matrix.rows)
     }
 
     // Global tests.
