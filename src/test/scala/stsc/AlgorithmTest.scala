@@ -1,12 +1,10 @@
 package stsc
 
-import org.scalatest.{FlatSpec, Matchers}
-
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
+import breeze.linalg.{DenseMatrix, DenseVector}
 
 import java.io.File
+
+import org.scalatest.{FlatSpec, Matchers}
 
 class AlgorithmTest extends FlatSpec with Matchers {
     def keyForMaxValueWithMargin(qualities: Map[Int, Double]): Int = {

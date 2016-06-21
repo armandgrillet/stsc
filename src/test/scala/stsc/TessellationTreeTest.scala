@@ -1,11 +1,10 @@
-import stsc._
-import org.scalatest._
+package stsc
 
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
+import breeze.linalg.{DenseMatrix, DenseVector}
 
 import java.io.File
+
+import org.scalatest.{FlatSpec, Matchers}
 
 class TessellationTreeTest extends FlatSpec with Matchers {
     "The tessellation tree" should "work with tt0" in {

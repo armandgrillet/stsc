@@ -1,9 +1,8 @@
-import stsc.Tile
-import org.scalatest._
+package stsc
 
-import breeze.linalg._
-import breeze.numerics._
-import breeze.stats._
+import breeze.linalg.{DenseVector}
+
+import org.scalatest.{FlatSpec, Matchers}
 
 class TileTest extends FlatSpec with Matchers {
     "The tile" should "work" in {
