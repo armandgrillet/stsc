@@ -72,11 +72,11 @@ object Algorithm {
         }
 
         var qualities: Map[Int, Double] = Map() // The qualities, key = number of clusters and value = quality
-        var clusters = DenseVector(0) // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
-
+        // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
         var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
         qualities += (minClusters -> quality) // Add the quality to the map.
+        var clusters = argmax(rotatedEigenvectors(*, ::))
 
         var group = 0
         for (group <- minClusters until maxClusters) { // We get the quality of stsc for each possible number of clusters.
