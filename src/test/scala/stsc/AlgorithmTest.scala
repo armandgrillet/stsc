@@ -11,8 +11,10 @@ class AlgorithmTest extends FlatSpec with Matchers {
         var maxValue = 0.0
         var keyForMaxValue = 0
         for ((k, v) <- qualities) {
-            if (maxValue - 0.002 < v) {
+            if (v > maxValue) {
                 maxValue = v
+                keyForMaxValue = k
+            } else if (maxValue - 0.002 < v) {
                 keyForMaxValue = k
             }
         }

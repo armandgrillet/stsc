@@ -18,4 +18,16 @@ class AlgorithmBenchmark extends FunSuite {
         }
         println("Total time : " + time)
     }
+
+    // test("Should work with 2 clusters of 1000 observations in 1 dimension") {
+    //     val sample1 = Gaussian(0, 1).sample(1000)
+    //     val sample2 = Gaussian(10, 1).sample(1000)
+    //     val samplesMatrix = DenseMatrix.zeros[Double](sample1.length * 2, 1)
+    //     samplesMatrix(::, 0) := DenseVector((sample1 ++ sample2).toArray)
+    //     val time = measure {
+    //         val result = Algorithm.cluster(samplesMatrix)
+    //         println(result._1)
+    //     }
+    //     println("Total time : " + time)
+    // }
 }

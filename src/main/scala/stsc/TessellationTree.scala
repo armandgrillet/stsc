@@ -203,7 +203,7 @@ object TessellationTree {
         (firstTile, secondTile)
     }: (Tile, Tile)
 
-    private def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): TileTree = {
+    private[stsc] def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): TileTree = {
         val observations = observationsInTile(dataset, parentTile)
         if (observations.rows > maxObservations) {
             val childrenTiles = cutFunction(parentTile, observations)
@@ -213,7 +213,7 @@ object TessellationTree {
         }
     }
 
-    private def observationsInTile(dataset: DenseMatrix[Double], tile: Tile): DenseMatrix[Double] = {
+    private[stsc] def observationsInTile(dataset: DenseMatrix[Double], tile: Tile): DenseMatrix[Double] = {
         val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
         var numberOfObservations = 0
         for (row <- dataset(*,::)) {

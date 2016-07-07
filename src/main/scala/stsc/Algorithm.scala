@@ -22,21 +22,14 @@ object Algorithm {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
         }
         if (minClusters < 0) {
-            throw new IllegalArgumentException("The minimum number of clusters has to be more than 0.")
+            throw new IllegalArgumentException("The minimum number of clusters has to be positive.")
         }
         if (minClusters > maxClusters) {
-            throw new IllegalArgumentException("The minimum number of clusters has to be inferior compared to the maximum number of clusters.")
+            throw new IllegalArgumentException("The minimum number of clusters has to be inferior to the maximum number of clusters.")
         }
-
-        // Centralize and scale the data.
-        val meanCols = mean(dataset(::, *)) // Create a dense matrix containing the mean of each column
-        val tempMatrix = DenseMatrix.tabulate(dataset.rows, dataset.cols) { // A temporary matrix representing the dataset - the mean of each column.
-            case (i, j) => dataset(i, j) - meanCols(j)
-        }
-        var matrix = tempMatrix / max(abs(tempMatrix)) // The centralized matrix.
 
         // Compute local scale (step 1).
-        val distances = euclideanDistance(matrix)
+        val distances = euclideanDistance(dataset)
         val scale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
 
         // Build locally scaled affinity matrix (step 2).
@@ -71,18 +64,6 @@ object Algorithm {
 
         val normalizedMatrix = oldWayToGetNormalizedMatrix()
 
-        // val diagonalVector = pow(sum(scaledMatrix(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
-        // var normalizedMatrix2 = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
-        //
-        // for (row <- 0 until normalizedMatrix2.rows) {
-        //     for (col <- row + 1 until normalizedMatrix2.cols) {
-        //         normalizedMatrix2(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(row)
-        //         normalizedMatrix2(col, row) = normalizedMatrix2(row, col)
-        //     }
-        // }
-        //
-        // println(normalizedMatrix2)
-
         // Compute the largest eigenvectors
         val eigenvectors = eigSym(normalizedMatrix).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
         val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, maxClusters) {
@@ -105,11 +86,12 @@ object Algorithm {
             qualities += (group + 1 -> tempQuality) // Add the quality to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
-            // TODO: batch comparison of the qualities.
             if (tempQuality >= quality - 0.002) {
-                quality = tempQuality
                 absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
                 clusters = argmax(absoluteRotatedEigenvectors(*, ::))
+            }
+            if (tempQuality > quality) {
+                quality = tempQuality
             }
         }
 
@@ -131,7 +113,7 @@ object Algorithm {
             for (j <- i + 1 until matrix.rows) {
                 distanceVector = matrix(i, ::) - matrix(j, ::) // Xi - Xj | Yi - Yj
                 distanceVector *= distanceVector // (Xi - Xj)² | (Yi - Yj)²
-                distanceMatrix(i, j) = sqrt(sum(distanceVector)) // √(Xi - Xj)² + (Yi - Yj)² + ...
+                distanceMatrix(i, j) = sqrt(sum(distanceVector)) // √(Xi - Xj)² + (Yi - Yj)² + ..., works like a rectangle triangle where distance² = i² + j²
                 distanceMatrix(j, i) = distanceMatrix(i, j) // Symmetric matrix.
             }
         }
@@ -168,7 +150,7 @@ object Algorithm {
     * @param localScale the local scale, the dictance of the Kth nearest neighbor for each observation as a dense vector
     * @return the locally scaled affinity matrix
     */
-    private def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
+    private[stsc] def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
         var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
         var i, j = 0
@@ -190,7 +172,7 @@ object Algorithm {
     * @param eigenvectors the eigenvectors
     * @return the quality of the best rotation and the linked dense matrix.
     */
-    private def stsc(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
+    private[stsc] def stsc(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
         var nablaJ, quality = 0.0 // Variables used to recover the aligning rotation.
         var newQuality, old1Quality, old2Quality = 0.0 // Variables to compute the descend through true derivative.
         var qualityUp, qualityDown = 0.0 // Variables to descend through numerical derivative.
@@ -276,7 +258,7 @@ object Algorithm {
     * @param matrix the matrix to analyze
     * @return the angles
     */
-    private def angles(matrix: DenseMatrix[Double]): Int = {
+    private[stsc] def angles(matrix: DenseMatrix[Double]): Int = {
         return (matrix.cols * (matrix.cols - 1) / 2).toInt
     }
 
@@ -285,25 +267,30 @@ object Algorithm {
     * @param matrix the rotation to analyze
     * @return the quality, the bigger the better (generally less than 1)
     */
-    private def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
+    private[stsc] def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
         // Take the square of all entries and find the max of each row
         var squareMatrix = matrix :* matrix
         val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
         return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
     }
 
-    private def evaluateQualityGradient(theta: DenseVector[Double], angle: Int, matrix: DenseMatrix[Double]): Double = {
-        val ik = DenseVector.zeros[Int](angles(matrix))
-        val jk = DenseVector.zeros[Int](angles(matrix))
+    private[stsc] def indexes(angles: Int, dims: Int): (DenseVector[Int], DenseVector[Int]) = {
+        val ik = DenseVector.zeros[Int](angles)
+        val jk = DenseVector.zeros[Int](angles)
 
         var i, j, k = 0
-        for (i <- 0 until matrix.cols) {
-            for (j <- (i + 1) until matrix.cols) {
+        for (i <- 0 until dims) {
+            for (j <- (i + 1) until dims) {
                 ik(k) = i
                 jk(k) = j
                 k += 1
             }
         }
+        return (ik, jk)
+    }
+
+    private[stsc] def evaluateQualityGradient(theta: DenseVector[Double], angle: Int, matrix: DenseMatrix[Double]): Double = {
+        val (ik, jk) = indexes(angles(matrix), matrix.cols)
 
         // Build V, U, A
         var vForAngle = DenseMatrix.zeros[Double](matrix.cols, matrix.cols)
@@ -341,7 +328,7 @@ object Algorithm {
     * @param theta the angle of the rotation
     * @return the Givens rotation
     */
-    private def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
+    private[stsc] def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
         val g = uAB(theta, 0, angles(matrix) - 1, matrix.cols, angles(matrix))
         return matrix * g
     }
@@ -355,24 +342,14 @@ object Algorithm {
     * @param angles
     * @return the gradient
     */
-    private def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int, angles: Int): DenseMatrix[Double] = {
+    private[stsc] def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int, angles: Int): DenseMatrix[Double] = {
         var uab = DenseMatrix.eye[Double](dims) // Create an empty identity matrix.
 
         if (b < a) {
             return uab
         }
 
-        val ik = DenseVector.zeros[Int](angles)
-        val jk = DenseVector.zeros[Int](angles)
-
-        var i, j, k = 0
-        for (i <- 0 until dims) {
-            for (j <- (i + 1) until dims) {
-                ik(k) = i
-                jk(k) = j
-                k += 1
-            }
-        }
+        val (ik, jk) = indexes(angles, dims)
 
         var tt, uIk = 0.0
         for (k <- a to b) {
