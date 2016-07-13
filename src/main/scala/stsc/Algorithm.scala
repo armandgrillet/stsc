@@ -1,11 +1,12 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, diag, eigSym, max, sum, *}
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, eigSym, max, sum, *}
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
 
 import scala.collection.immutable.SortedMap
 import scala.util.control.Breaks.{break, breakable}
+import java.io.File
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
 object Algorithm {
@@ -36,33 +37,15 @@ object Algorithm {
         val scaledMatrix = locallyScaledAffinityMatrix(distances, scale)
 
         // Build the normalized affinity matrix (step 3)
-        def oldWayToGetNormalizedMatrix(): DenseMatrix[Double] = {
-            val diagScaledMatrix = diag(pow(sum(scaledMatrix(*, ::)), -0.5)) // Sum of each row, then power -0.5, then matrix.
-            var normalizedMatrix = diagScaledMatrix * scaledMatrix * diagScaledMatrix
+        val diagonalVector = DenseVector.tabulate(scaledMatrix.rows){i => 1 / sqrt(sum(scaledMatrix(i, ::))) } // Sum of each row, then power -0.5.
+        var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
 
-            var row, col = 0
-            for (row <- 0 until normalizedMatrix.rows) {
-                for (col <- row + 1 until normalizedMatrix.cols) {
-                    normalizedMatrix(col, row) = normalizedMatrix(row, col)
-                }
+        for (row <- 0 until normalizedMatrix.rows) {
+            for (col <- row + 1 until normalizedMatrix.cols) {
+                normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(col)
+                normalizedMatrix(col, row) = normalizedMatrix(row, col)
             }
-            return normalizedMatrix
         }
-
-        def newWayToGetNormalizedMatrix(): DenseMatrix[Double] = {
-            val diagonalVector = pow(sum(scaledMatrix(*, ::)), -0.5) // Sum of each row, then power -0.5, then matrix.
-            var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
-
-            for (row <- 0 until normalizedMatrix.rows) {
-                for (col <- row + 1 until normalizedMatrix.cols) {
-                    normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(row)
-                    normalizedMatrix(col, row) = normalizedMatrix(row, col)
-                }
-            }
-            return normalizedMatrix
-        }
-
-        val normalizedMatrix = oldWayToGetNormalizedMatrix()
 
         // Compute the largest eigenvectors
         val eigenvectors = eigSym(normalizedMatrix).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
