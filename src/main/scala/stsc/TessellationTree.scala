@@ -13,7 +13,28 @@ import scala.collection.mutable.ListBuffer
 * @param dimensions the dimension which in is the tessellation tree
 * @param tiles the tiles in the tessellation tree, represented as a binary tree
 */
-class TessellationTree(val dimensions: Int, val tiles: TileTree) {
+class TessellationTree(val tiles: TileTree) {
+    val dimensions = tiles.value.mins.length
+    
+    /* Returns a densematrix containing all the leafs of the tree. */
+    def leafsAsDenseMatrix(): DenseMatrix[Double] = {
+        val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
+        var count = 0
+        def asDenseMatrixHelper(tree: TileTree) {
+            if (tree.isLeaf) {
+                println(tree.value.asTranspose())
+                leafsDenseMatrix(count, ::) := tree.value.asTranspose()
+                count += 1
+            } else {
+                asDenseMatrixHelper(tree.left)
+                asDenseMatrixHelper(tree.right)
+            }
+        }
+        asDenseMatrixHelper(tiles)
+
+        return leafsDenseMatrix
+    }
+
     /** Write the tessellation tree as a CSV file.
     *
     * @param filePath the path where the tessellation tree has to be written.
@@ -104,7 +125,7 @@ object TessellationTree {
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(dataset.cols, tilesTree)
+        return new TessellationTree(tilesTree)
     }
 
     /** Initialize a tessellation tree with a given maximum number of tiles in the tessellation tree.
@@ -121,7 +142,7 @@ object TessellationTree {
         val maxObservations = math.ceil(dataset.rows / tilesNumber).toInt
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(dataset.cols, tilesTree)
+        return new TessellationTree(tilesTree)
     }
 
     /** Initialize a tessellation tree using a given CSV. The CSV must have a specific structure created by toCSV().
@@ -153,7 +174,7 @@ object TessellationTree {
 
         var tiles = fromCSVHelper(0)
 
-        return new TessellationTree(dimensions, tiles)
+        return new TessellationTree(tiles)
     }
 
     // Anonymous functions to find on which dimension should the cut of the tile be made.
