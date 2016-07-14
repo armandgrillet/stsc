@@ -37,15 +37,7 @@ object Algorithm {
         val scaledMatrix = locallyScaledAffinityMatrix(distances, scale)
 
         // Build the normalized affinity matrix (step 3)
-        val diagonalVector = DenseVector.tabulate(scaledMatrix.rows){i => 1 / sqrt(sum(scaledMatrix(i, ::))) } // Sum of each row, then power -0.5.
-        var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
-
-        for (row <- 0 until normalizedMatrix.rows) {
-            for (col <- row + 1 until normalizedMatrix.cols) {
-                normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(col)
-                normalizedMatrix(col, row) = normalizedMatrix(row, col)
-            }
-        }
+        val normalizedMatrix = normalizedAffinityMatrix(scaledMatrix)
 
         // Compute the largest eigenvectors
         val eigenvectors = eigSym(normalizedMatrix).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
@@ -147,6 +139,25 @@ object Algorithm {
         }
 
         return affinityMatrix
+    }
+
+    /** Returns the euclidean distance of a given dense matrix.
+    *
+    * @param scaledMatrix the matrix that needs to be normalized
+    * @return the normalized matrix
+    */
+    private[stsc] def normalizedAffinityMatrix(scaledMatrix: DenseMatrix[Double]): DenseMatrix[Double] = {
+        val diagonalVector = DenseVector.tabulate(scaledMatrix.rows){i => 1 / sqrt(sum(scaledMatrix(i, ::))) } // Sum of each row, then power -0.5.
+        var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
+
+        for (row <- 0 until normalizedMatrix.rows) {
+            for (col <- row + 1 until normalizedMatrix.cols) {
+                normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(col)
+                normalizedMatrix(col, row) = normalizedMatrix(row, col)
+            }
+        }
+
+        return normalizedMatrix
     }
 
     //
