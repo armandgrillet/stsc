@@ -6,21 +6,22 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class TileTest extends FlatSpec with Matchers {
     "The tile" should "work" in {
-        val tile = Tile(DenseVector(-1), DenseVector(10), 2)
+        val tessellationTreeBorderWidth = 2
+        val tile = Tile(DenseVector(-1), DenseVector(10))
         tile.sizes() should be(DenseVector(11.0))
         tile.asTranspose() should be(DenseVector(-1.0, 10.0).t)
 
         val obsOne = DenseVector(5.0)
-        tile.has(obsOne) should be (true)
-        tile.hasDeeply(obsOne) should be (true)
+        tile.has(obsOne, tessellationTreeBorderWidth) should be (true)
+        tile.hasDeeply(obsOne, tessellationTreeBorderWidth) should be (true)
 
         val obsTwo = DenseVector(12.0)
-        tile.has(obsTwo) should be (true)
-        tile.hasDeeply(obsTwo) should be (false)
+        tile.has(obsTwo, tessellationTreeBorderWidth) should be (true)
+        tile.hasDeeply(obsTwo, tessellationTreeBorderWidth) should be (false)
 
         val obsThree = DenseVector(-5.0)
-        tile.has(obsThree) should be (false)
-        tile.hasDeeply(obsThree) should be (false)
+        tile.has(obsThree, tessellationTreeBorderWidth) should be (false)
+        tile.hasDeeply(obsThree, tessellationTreeBorderWidth) should be (false)
 
         val obsFour = DenseVector(-1.0)
         tile.has(obsFour, 0.0) should be (true)

@@ -9,11 +9,9 @@ import breeze.numerics.abs
   * @constructor create a new tile with a list of minimums, maximums and a border width.
   * @param mins the minimums of the tile in every dimension.
   * @param maxs the maximums of the tile in every dimension.
-  * @param borderWidth the border width used when an observation is between two tiles.
   */
-case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidth: Double) {
+case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
     require(mins.length == maxs.length)
-    require(borderWidth >= 0)
 
     val emptyBitVector = BitVector.zeros(mins.length)
 
@@ -22,7 +20,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       * @param observation the observation to check, represented as a DenseVector.
       * @return if the tile has the observation.
       */
-    def has(observation: DenseVector[Double], borderWidth: Double = borderWidth): Boolean = {
+    def has(observation: DenseVector[Double], borderWidth: Double): Boolean = {
         if (observation.length != mins.length) { throw new IndexOutOfBoundsException("The observation dimension has to be the same as the tile.") }
         if (observation :< (mins :- borderWidth) == emptyBitVector && observation :> (maxs :+ borderWidth) == emptyBitVector && (observation :== (maxs :- borderWidth)) == emptyBitVector) {
             return true
@@ -35,7 +33,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double], borderWidt
       * @param observation the observation to check, represented as a DenseVector.
       * @return if the tile has the observation deeply in it.
       */
-    def hasDeeply(observation: DenseVector[Double]): Boolean = {
+    def hasDeeply(observation: DenseVector[Double], borderWidth: Double): Boolean = {
         if ((observation :< (mins :+ borderWidth)) == emptyBitVector && (observation :> (maxs :- borderWidth)) == emptyBitVector && (observation :== (maxs :- borderWidth)) == emptyBitVector) {
             return true
         }

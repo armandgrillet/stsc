@@ -10,19 +10,20 @@ import scala.collection.mutable.ListBuffer
 /** A tessellation tree to divide a daset into multiple tiles.
 *
 * @constructor create a new tessellation tree containing a list of Tiles and a dimension.
-* @param dimensions the dimension which in is the tessellation tree
 * @param tiles the tiles in the tessellation tree, represented as a binary tree
+* @param borderWidth the bordel of each tile that will be used to know where is an observation
 */
-class TessellationTree(val tiles: TileTree) {
+class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
+    require(borderWidth >= 0)
+
     val dimensions = tiles.value.mins.length
-    
+
     /* Returns a densematrix containing all the leafs of the tree. */
     def leafsAsDenseMatrix(): DenseMatrix[Double] = {
         val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
         var count = 0
         def asDenseMatrixHelper(tree: TileTree) {
             if (tree.isLeaf) {
-                println(tree.value.asTranspose())
                 leafsDenseMatrix(count, ::) := tree.value.asTranspose()
                 count += 1
             } else {
@@ -41,9 +42,9 @@ class TessellationTree(val tiles: TileTree) {
     */
     def toCSV(filePath: String) = {
         var tilesDenseMatrix = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
-        tilesDenseMatrix(0, 0) = tiles.value.borderWidth
+        tilesDenseMatrix(0, 0) = borderWidth
 
-        val tilesDenseVector = DenseVector.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0), 0) }
+        val tilesDenseVector = DenseVector.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
 
         def toCSVHelper(tree: TileTree, position: Int) {
             tilesDenseVector(position) = tree.value
@@ -75,10 +76,10 @@ class TessellationTree(val tiles: TileTree) {
                 owningTiles += tileTree.value
             } else {
                 // The observation can be in multiple tiles thus we test for the left and the right tile.
-                if (tileTree.left.value.has(observation)) {
+                if (tileTree.left.value.has(observation, borderWidth)) {
                     owningTilesHelper(tileTree.left)
                 }
-                if (tileTree.right.value.has(observation)) {
+                if (tileTree.right.value.has(observation, borderWidth)) {
                     owningTilesHelper(tileTree.right)
                 }
             }
@@ -123,9 +124,9 @@ object TessellationTree {
     def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
-        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
+        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(tilesTree)
+        return new TessellationTree(tilesTree, tileBorderWidth)
     }
 
     /** Initialize a tessellation tree with a given maximum number of tiles in the tessellation tree.
@@ -140,9 +141,9 @@ object TessellationTree {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (tilesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
         val maxObservations = math.ceil(dataset.rows / tilesNumber).toInt
-        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity}, tileBorderWidth)
+        val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(tilesTree)
+        return new TessellationTree(tilesTree, tileBorderWidth)
     }
 
     /** Initialize a tessellation tree using a given CSV. The CSV must have a specific structure created by toCSV().
@@ -157,11 +158,11 @@ object TessellationTree {
 
         val borderWidth = tilesDenseMatrix(0, 0)
         val dimensions = tilesDenseMatrix.cols / 2
-        val tilesDenseVector = DenseVector.fill(tilesDenseMatrix.rows - 1){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0), 0) }
+        val tilesDenseVector = DenseVector.fill(tilesDenseMatrix.rows - 1){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
         var i = 0
         for (i <- 1 until tilesDenseMatrix.rows) {
             val rowAsTile = tilesDenseMatrix(i, ::).t
-            tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1), borderWidth)
+            tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1))
         }
 
         def fromCSVHelper(i: Int): TileTree = {
@@ -174,7 +175,7 @@ object TessellationTree {
 
         var tiles = fromCSVHelper(0)
 
-        return new TessellationTree(tiles)
+        return new TessellationTree(tiles, borderWidth)
     }
 
     // Anonymous functions to find on which dimension should the cut of the tile be made.
@@ -192,11 +193,11 @@ object TessellationTree {
 
         var firstTileMaxs = parent.maxs.copy
         firstTileMaxs(cutDirection) = observationsMedian
-        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+        var firstTile = new Tile(parent.mins, firstTileMaxs) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
         secondTileMins(cutDirection) = observationsMedian
-        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+        var secondTile = Tile(secondTileMins, parent.maxs)
 
         (firstTile, secondTile)
     }: (Tile, Tile)
@@ -215,11 +216,11 @@ object TessellationTree {
 
         var firstTileMaxs = parent.maxs.copy
         firstTileMaxs(cutDirection) = observationsMedian
-        var firstTile = new Tile(parent.mins, firstTileMaxs, parent.borderWidth) // The children parents will be similar as the parent.
+        var firstTile = new Tile(parent.mins, firstTileMaxs) // The children parents will be similar as the parent.
 
         var secondTileMins = parent.mins.copy
         secondTileMins(cutDirection) = observationsMedian
-        var secondTile = Tile(secondTileMins, parent.maxs, parent.borderWidth)
+        var secondTile = Tile(secondTileMins, parent.maxs)
 
         (firstTile, secondTile)
     }: (Tile, Tile)
@@ -238,7 +239,7 @@ object TessellationTree {
         val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
         var numberOfObservations = 0
         for (row <- dataset(*,::)) {
-            if (tile.has(row)) {
+            if (tile.has(row, 0)) {
                 observations(numberOfObservations, ::) := row.t
                 numberOfObservations += 1
             }
