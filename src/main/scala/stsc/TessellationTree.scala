@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvread, csvwrite, max, min, sum, *}
+import breeze.linalg.{BitVector, DenseMatrix, DenseVector, argmax, csvread, csvwrite, max, min, sum, *}
 import breeze.numerics.abs
 import breeze.stats.median
 
@@ -121,7 +121,7 @@ object TessellationTree {
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
     * @return the tessellation tree.
     */
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
+    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
@@ -132,15 +132,16 @@ object TessellationTree {
     /** Initialize a tessellation tree with a given maximum number of tiles in the tessellation tree.
     *
     * @param dataset the dataset to use to create the tessellation tree.
-    * @param tilesNumber the number of tiles in the tessellation tree.
+    * @param nodesNumber the number of nodes in the tessellation tree.
     * @param tileBorderWidth the border width of the tiles in the tessellation tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
     * @return the tessellation tree.
     */
-    def createWithTilesNumber(dataset: DenseMatrix[Double], tilesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
+    def createWithTilesNumber(dataset: DenseMatrix[Double], nodesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
-        if (tilesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
-        val maxObservations = math.ceil(dataset.rows / tilesNumber).toInt
+        if (nodesNumber < 1) { throw new IndexOutOfBoundsException("The number of tiles must be positive.") }
+        if (nodesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
+        val maxObservations = math.ceil(dataset.rows / nodesNumber).toInt
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
         return new TessellationTree(tilesTree, tileBorderWidth)
@@ -188,18 +189,26 @@ object TessellationTree {
     * @param observations the observations in the tile.
     */
     val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
-        val cutDirection = argmax(parent.sizes())
-        val observationsMedian = median(observations(::, cutDirection))
+        val parentSizes = parent.sizes()
+        // We chekc if the parent sites contains some infinities.
+        if ((parentSizes :== DenseVector.fill(parentSizes.length){Double.PositiveInfinity}) == BitVector()) {
+            val cutDirection = argmax(parentSizes)
+            println(parent.sizes())
+            println(cutDirection)
+            val observationsMedian = median(observations(::, cutDirection))
 
-        var firstTileMaxs = parent.maxs.copy
-        firstTileMaxs(cutDirection) = observationsMedian
-        var firstTile = new Tile(parent.mins, firstTileMaxs) // The children parents will be similar as the parent.
+            var firstTileMaxs = parent.maxs.copy
+            firstTileMaxs(cutDirection) = observationsMedian
+            var firstTile = new Tile(parent.mins, firstTileMaxs) // The children parents will be similar as the parent.
 
-        var secondTileMins = parent.mins.copy
-        secondTileMins(cutDirection) = observationsMedian
-        var secondTile = Tile(secondTileMins, parent.maxs)
+            var secondTileMins = parent.mins.copy
+            secondTileMins(cutDirection) = observationsMedian
+            var secondTile = Tile(secondTileMins, parent.maxs)
 
-        (firstTile, secondTile)
+            (firstTile, secondTile)
+        } else {
+            cutUsingContentDistances(parent, observations)
+        }
     }: (Tile, Tile)
 
     /** Cut a tile in two depending on the observations in a tile, returns two new tiles.
@@ -207,7 +216,7 @@ object TessellationTree {
     * @param tile the parent tile.
     * @param observations the observations in the tile.
     */
-    val cutUsingContentDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
+    val cutUsingContentDistances = (parent: Tile, observations: DenseMatrix[Double]) => {
         val minCols = min(observations(::, *)).t
         val maxCols = max(observations(::, *)).t
         val dists = abs(maxCols - minCols)
