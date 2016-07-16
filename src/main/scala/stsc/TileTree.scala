@@ -1,12 +1,9 @@
 package stsc
 
-object TileTree {
-    def fromList(list: List[Tile]): TileTree = {
-        return null
-    }
-}
-
 case class TileTree(value: Tile, left: TileTree = null, right: TileTree = null) {
+    require(left == null || left.value.mins.length == value.mins.length, "The value of the tree and its left child must be in the same dimensions")
+    require(right == null || right.value.mins.length == value.mins.length, "The value of the tree and its right child must be in the same dimensions")
+
     def isLeaf: Boolean = {
         if (left == null && right == null) {
             true
