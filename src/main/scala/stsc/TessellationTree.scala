@@ -13,7 +13,7 @@ import scala.collection.mutable.ListBuffer
 * @param tiles the tiles in the tessellation tree, represented as a binary tree
 * @param borderWidth the bordel of each tile that will be used to know where is an observation
 */
-class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
+class TessellationTree(val tiles: Node, val borderWidth: Double) {
     require(borderWidth >= 0)
 
     val dimensions = tiles.value.mins.length
@@ -22,7 +22,7 @@ class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
     def leafsAsDenseMatrix(): DenseMatrix[Double] = {
         val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
         var count = 0
-        def asDenseMatrixHelper(tree: TileTree) {
+        def asDenseMatrixHelper(tree: Node) {
             if (tree.isLeaf) {
                 leafsDenseMatrix(count, ::) := tree.value.asTranspose()
                 count += 1
@@ -46,7 +46,7 @@ class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
 
         val tilesDenseVector = DenseVector.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
 
-        def toCSVHelper(tree: TileTree, position: Int) {
+        def toCSVHelper(tree: Node, position: Int) {
             tilesDenseVector(position) = tree.value
             if (!tree.isLeaf) {
                 toCSVHelper(tree.left, 2 * position + 1)
@@ -71,16 +71,16 @@ class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
     def owningTiles(observation: DenseVector[Double]): List[Tile] = {
         var owningTiles = ListBuffer.empty[Tile]
 
-        def owningTilesHelper(tileTree: TileTree) {
-            if (tileTree.isLeaf) {
-                owningTiles += tileTree.value
+        def owningTilesHelper(Node: Node) {
+            if (Node.isLeaf) {
+                owningTiles += Node.value
             } else {
                 // The observation can be in multiple tiles thus we test for the left and the right tile.
-                if (tileTree.left.value.has(observation, borderWidth)) {
-                    owningTilesHelper(tileTree.left)
+                if (Node.left.value.has(observation, borderWidth)) {
+                    owningTilesHelper(Node.left)
                 }
-                if (tileTree.right.value.has(observation, borderWidth)) {
-                    owningTilesHelper(tileTree.right)
+                if (Node.right.value.has(observation, borderWidth)) {
+                    owningTilesHelper(Node.right)
                 }
             }
         }
@@ -95,14 +95,14 @@ class TessellationTree(val tiles: TileTree, val borderWidth: Double) {
     * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
     */
     def owningTile(observation: DenseVector[Double]): Tile = {
-        def owningTileHelper(tileTree: TileTree): Tile = {
-            if (tileTree.isLeaf) {
-                return tileTree.value
+        def owningTileHelper(Node: Node): Tile = {
+            if (Node.isLeaf) {
+                return Node.value
             } else {
-                if (tileTree.left.value.has(observation, 0)) {
-                    return owningTileHelper(tileTree.left)
+                if (Node.left.value.has(observation, 0)) {
+                    return owningTileHelper(Node.left)
                 } else {
-                    return owningTileHelper(tileTree.right)
+                    return owningTileHelper(Node.right)
                 }
             }
         }
@@ -165,11 +165,11 @@ object TessellationTree {
             tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1))
         }
 
-        def fromCSVHelper(i: Int): TileTree = {
+        def fromCSVHelper(i: Int): Node = {
             if (2 * i + 2 < tilesDenseVector.length) {
-                return TileTree(tilesDenseVector(i), fromCSVHelper(2 * i + 1), fromCSVHelper(2 * i + 2))
+                return Node(tilesDenseVector(i), fromCSVHelper(2 * i + 1), fromCSVHelper(2 * i + 2))
             } else {
-                return TileTree(tilesDenseVector(i))
+                return Node(tilesDenseVector(i))
             }
         }
 
@@ -225,13 +225,13 @@ object TessellationTree {
         (firstTile, secondTile)
     }: (Tile, Tile)
 
-    private[stsc] def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): TileTree = {
+    private[stsc] def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): Node = {
         val observations = observationsInTile(dataset, parentTile)
         if (observations.rows > maxObservations) {
             val childrenTiles = cutFunction(parentTile, observations)
-            return TileTree(parentTile, cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutFunction))
+            return Node(parentTile, cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutFunction))
         } else {
-            return TileTree(parentTile)
+            return Node(parentTile)
         }
     }
 

@@ -11,7 +11,7 @@ import breeze.numerics.abs
   * @param maxs the maximums of the tile in every dimension.
   */
 case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
-    require(mins.length == maxs.length)
+    require(mins.length == maxs.length, "mins and maxs of the tile have to be the same")
 
     val emptyBitVector = BitVector.zeros(mins.length)
 
