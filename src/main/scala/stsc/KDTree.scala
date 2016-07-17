@@ -7,13 +7,13 @@ import breeze.stats.median
 import java.io.File
 import scala.collection.mutable.ListBuffer
 
-/** A tessellation tree to divide a daset into multiple tiles.
+/** A k-d tree to divide a daset into multiple tiles.
 *
-* @constructor create a new tessellation tree containing a list of Tiles and a dimension.
-* @param tiles the tiles in the tessellation tree, represented as a binary tree
+* @constructor create a new k-d tree containing a list of Tiles and a dimension.
+* @param tiles the tiles in the k-d tree, represented as a binary tree
 * @param borderWidth the bordel of each tile that will be used to know where is an observation
 */
-class TessellationTree(val tiles: Node, val borderWidth: Double) {
+class KDTree(val tiles: Node, val borderWidth: Double) {
     require(borderWidth >= 0)
 
     val dimensions = tiles.value.mins.length
@@ -36,9 +36,9 @@ class TessellationTree(val tiles: Node, val borderWidth: Double) {
         return leafsDenseMatrix
     }
 
-    /** Write the tessellation tree as a CSV file.
+    /** Write the k-d tree as a CSV file.
     *
-    * @param filePath the path where the tessellation tree has to be written.
+    * @param filePath the path where the k-d tree has to be written.
     */
     def toCSV(filePath: String) = {
         var tilesDenseMatrix = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
@@ -111,51 +111,51 @@ class TessellationTree(val tiles: Node, val borderWidth: Double) {
     }
 }
 
-/** Factory for gr.armand.stsc.TessellationTree instances. */
-object TessellationTree {
-    /** Initialize a tessellation tree with a given maximum number of observations per tile.
+/** Factory for gr.armand.stsc.KDTree instances. */
+object KDTree {
+    /** Initialize a k-d tree with a given maximum number of observations per tile.
     *
-    * @param dataset the dataset to use to create the tessellation tree.
+    * @param dataset the dataset to use to create the k-d tree.
     * @param maxObservations the maximum number of observations per tile.
-    * @param tileBorderWidth the border width of the tiles in the tessellation tree.
+    * @param tileBorderWidth the border width of the tiles in the k-d tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
-    * @return the tessellation tree.
+    * @return the k-d tree.
     */
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
+    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(tilesTree, tileBorderWidth)
+        return new KDTree(tilesTree, tileBorderWidth)
     }
 
-    /** Initialize a tessellation tree with a given maximum number of tiles in the tessellation tree.
+    /** Initialize a k-d tree with a given maximum number of tiles in the k-d tree.
     *
-    * @param dataset the dataset to use to create the tessellation tree.
-    * @param nodesNumber the number of nodes in the tessellation tree.
-    * @param tileBorderWidth the border width of the tiles in the tessellation tree.
+    * @param dataset the dataset to use to create the k-d tree.
+    * @param nodesNumber the number of nodes in the k-d tree.
+    * @param tileBorderWidth the border width of the tiles in the k-d tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
-    * @return the tessellation tree.
+    * @return the k-d tree.
     */
-    def createWithTilesNumber(dataset: DenseMatrix[Double], nodesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): TessellationTree = {
+    def createWithTilesNumber(dataset: DenseMatrix[Double], nodesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (nodesNumber < 1) { throw new IndexOutOfBoundsException("The number of tiles must be positive.") }
         if (nodesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
         val maxObservations = math.ceil(dataset.rows / nodesNumber).toInt
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
-        return new TessellationTree(tilesTree, tileBorderWidth)
+        return new KDTree(tilesTree, tileBorderWidth)
     }
 
-    /** Initialize a tessellation tree using a given CSV. The CSV must have a specific structure created by toCSV().
+    /** Initialize a k-d tree using a given CSV. The CSV must have a specific structure created by toCSV().
     *
-    * @param filePath the path of the CSV file containing the tessellation tree.
-    * @return the tessellation tree.
+    * @param filePath the path of the CSV file containing the k-d tree.
+    * @return the k-d tree.
     */
-    def fromCSV(filePath: String): TessellationTree = {
+    def fromCSV(filePath: String): KDTree = {
         var tilesDenseMatrix = csvread(new File(filePath))
-        if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
-        if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a tessellation tree.") }
+        if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
+        if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
 
         val borderWidth = tilesDenseMatrix(0, 0)
         val dimensions = tilesDenseMatrix.cols / 2
@@ -176,7 +176,7 @@ object TessellationTree {
 
         var tiles = fromCSVHelper(0)
 
-        return new TessellationTree(tiles, borderWidth)
+        return new KDTree(tiles, borderWidth)
     }
 
     // Anonymous functions to find on which dimension should the cut of the tile be made.
