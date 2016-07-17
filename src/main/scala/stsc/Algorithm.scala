@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, eigSym, max, sum, *}
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvwrite, eigSym, max, sum, *}
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
 
@@ -15,7 +15,7 @@ object Algorithm {
     * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
-    * @return a Map of qualities (key = number of clusters, value = quality for this number of clusters) and the clusters for the best quality
+    * @return a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters for the best cost
     */
     def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
@@ -45,33 +45,34 @@ object Algorithm {
             case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
         }
 
-        var qualities: Map[Int, Double] = Map() // The qualities, key = number of clusters and value = quality
+        var costs: Map[Int, Double] = Map() // The costs, key = number of clusters and value = cost
         // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
-        var (quality, rotatedEigenvectors) = stsc(currentEigenvectors)
-        qualities += (minClusters -> quality) // Add the quality to the map.
+        // csvwrite(new File("./2evs.csv"), currentEigenvectors, separator = ',')
+        var (cost, rotatedEigenvectors) = stsc(currentEigenvectors)
+        costs += (minClusters -> cost) // Add the cost to the map.
         var absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
         var clusters = argmax(absoluteRotatedEigenvectors(*, ::))
 
         var group = 0
-        for (group <- minClusters until maxClusters) { // We get the quality of stsc for each possible number of clusters.
+        for (group <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
             val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t // One new eigenvector at each turn.
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
-            val (tempQuality, tempRotatedEigenvectors) = stsc(currentEigenvectors)
-            qualities += (group + 1 -> tempQuality) // Add the quality to the map.
+            val (tempCost, tempRotatedEigenvectors) = stsc(currentEigenvectors)
+            costs += (group + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
-            if (tempQuality >= quality - 0.002) {
+            if (tempCost <= cost * 1.0001) {
                 absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
                 clusters = argmax(absoluteRotatedEigenvectors(*, ::))
             }
-            if (tempQuality > quality) {
-                quality = tempQuality
+            if (tempCost < cost) {
+                cost = tempCost
             }
         }
 
-        val orderedQualities = SortedMap(qualities.toSeq:_*) // Order the qualities.
-        return (orderedQualities, clusters)
+        val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
+        return (orderedCosts, clusters)
     }
 
     /** Returns the euclidean distance of a given dense matrix.
@@ -164,20 +165,20 @@ object Algorithm {
     /** Step 5 of the self-tuning spectral clustering algorithm, recovery the rotation R whiwh best align the eigenvectors.
     *
     * @param eigenvectors the eigenvectors
-    * @return the quality of the best rotation and the linked dense matrix.
+    * @return the cost of the best rotation and the linked dense matrix.
     */
     private[stsc] def stsc(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
-        var nablaJ, quality = 0.0 // Variables used to recover the aligning rotation.
-        var newQuality, old1Quality, old2Quality = 0.0 // Variables to compute the descend through true derivative.
-        var qualityUp, qualityDown = 0.0 // Variables to descend through numerical derivative.
+        var nablaJ, cost = 0.0 // Variables used to recover the aligning rotation.
+        var newCost, old1Cost, old2Cost = 0.0 // Variables to compute the descend through true derivative.
+        var costUp, costDown = 0.0 // Variables to descend through numerical derivative.
 
         var rotatedEigenvectors = DenseMatrix.zeros[Double](0, 0)
 
         var theta, thetaNew = DenseVector.zeros[Double](angles(eigenvectors))
 
-        quality = evaluateQuality(eigenvectors)
-        old1Quality = quality
-        old2Quality = quality
+        cost = evaluateCost(eigenvectors)
+        old1Cost = cost
+        old2Cost = cost
 
         var i, j = 0
         breakable {
@@ -188,62 +189,62 @@ object Algorithm {
                         // Move up.
                         thetaNew(j) = theta(j) + alpha
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        qualityUp = evaluateQuality(rotatedEigenvectors)
+                        costUp = evaluateCost(rotatedEigenvectors)
 
                         // Move down.
                         thetaNew(j) = theta(j) - alpha
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        qualityDown = evaluateQuality(rotatedEigenvectors)
+                        costDown = evaluateCost(rotatedEigenvectors)
 
-                        // Update only if at least one of the new quality is better.
-                        if (qualityUp > quality || qualityDown > quality) {
-                            if (qualityUp > qualityDown) {
+                        // Update only if at least one of the new cost is better.
+                        if (costUp < cost || costDown < cost) {
+                            if (costUp < costDown) {
                                 theta(j) = theta(j) + alpha
                                 thetaNew(j) = theta(j)
-                                quality = qualityUp
+                                cost = costUp
                             } else {
                                 theta(j) = theta(j) - alpha
                                 thetaNew(j) = theta(j)
-                                quality = qualityDown
+                                cost = costDown
                             }
                         }
                     }
 
                     def trueDerivative() {
-                        val alpha = 1.0
+                        val alpha = 0.46
                         nablaJ = evaluateQualityGradient(theta, j, eigenvectors)
                         thetaNew(j) = theta(j) - alpha * nablaJ
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        newQuality = evaluateQuality(rotatedEigenvectors)
+                        newCost = evaluateCost(rotatedEigenvectors)
 
-                        if (newQuality > quality) {
+                        if (newCost < cost) {
                             theta(j) = thetaNew(j)
-                            quality = newQuality
+                            cost = newCost
                         } else {
                             thetaNew(j) = theta(j)
                         }
                     }
 
-                    numericalDerivative()
+                    trueDerivative()
                 }
 
-                // If the new quality is not that better, we end the rotation.
-                if (i > 2 && ((quality - old2Quality) < 0.001)) {
+                // If the new cost is not that better, we end the rotation.
+                if (i > 2 && (old2Cost - cost) < (0.0001 * old2Cost)) {
                     break
                 }
-                old2Quality = old1Quality
-                old1Quality = quality
+                old2Cost = old1Cost
+                old1Cost = cost
             }
         }
 
         // Last rotation
         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
 
-        // In rare cases the quality is Double.NaN, we handle this error here.
-        if (quality equals Double.NaN) {
+        // In rare cases the cost is Double.NaN, we handle this error here.
+        if (cost equals Double.NaN) {
             return (0, rotatedEigenvectors)
         } else {
-            return (quality, rotatedEigenvectors)
+            return (cost, rotatedEigenvectors)
         }
     }
 
@@ -256,16 +257,16 @@ object Algorithm {
         return (matrix.cols * (matrix.cols - 1) / 2).toInt
     }
 
-    /** Return the quality of a given rotation, follow the computation in the original paper code.
+    /** Return the cost of a given rotation, follow the computation in the original paper code.
     *
     * @param matrix the rotation to analyze
-    * @return the quality, the bigger the better (generally less than 1)
+    * @return the cost, the bigger the better (generally less than 1)
     */
-    private[stsc] def evaluateQuality(matrix: DenseMatrix[Double]): Double = {
+    private[stsc] def evaluateCost(matrix: DenseMatrix[Double]): Double = {
         // Take the square of all entries and find the max of each row
         var squareMatrix = matrix :* matrix
-        val cost = sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
-        return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
+        return sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
+        // return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
     }
 
     private[stsc] def indexes(angles: Int, dims: Int): (DenseVector[Int], DenseVector[Int]) = {

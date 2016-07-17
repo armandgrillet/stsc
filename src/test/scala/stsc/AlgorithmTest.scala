@@ -8,13 +8,13 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class AlgorithmTest extends FlatSpec with Matchers {
     def keyForMaxValueWithMargin(qualities: Map[Int, Double]): Int = {
-        var maxValue = 0.0
+        var maxValue = scala.Double.PositiveInfinity
         var keyForMaxValue = 0
         for ((k, v) <- qualities) {
-            if (v > maxValue) {
+            if (v < maxValue) {
                 maxValue = v
                 keyForMaxValue = k
-            } else if (maxValue - 0.002 < v) {
+            } else if (v < maxValue * 1.0001) {
                 keyForMaxValue = k
             }
         }
@@ -46,12 +46,12 @@ class AlgorithmTest extends FlatSpec with Matchers {
     }
 
     // Global tests.
-
     "The dataset 0" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (3)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(61, 139, 99))
     }
@@ -61,6 +61,7 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (3)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(106, 102, 95))
     }
@@ -70,6 +71,7 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (3)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(118, 75, 73))
     }
@@ -79,6 +81,7 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (5)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(136, 116, 111, 150, 109))
     }
@@ -88,6 +91,7 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (4)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(117, 123, 150, 122))
     }
@@ -97,6 +101,7 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        println(clustersQualities)
         keyForMaxValueWithMargin(clustersQualities) should be (3)
         compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(56, 82, 100))
     }
