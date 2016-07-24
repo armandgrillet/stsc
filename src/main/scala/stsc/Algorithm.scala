@@ -1,6 +1,7 @@
 package stsc
 
 import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvwrite, eigSym, max, sum, *}
+import breeze.linalg.functions.euclideanDistance
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
 
@@ -30,7 +31,7 @@ object Algorithm {
         }
 
         // Compute local scale (step 1).
-        val distances = euclideanDistance(dataset)
+        val distances = euclideanDistances(dataset)
         val scale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
 
         // Build locally scaled affinity matrix (step 2).
@@ -75,21 +76,18 @@ object Algorithm {
         return (orderedCosts, clusters)
     }
 
-    /** Returns the euclidean distance of a given dense matrix.
+    /** Returns the euclidean distances of a given dense matrix.
     *
     * @param matrix the matrix that needs to be analyzed, each row being an observation with each column representing one dimension
-    * @return the euclidean distance as a dense matrix
+    * @return the euclidean distances as a dense matrix
     */
-    private[stsc] def euclideanDistance(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
-        var distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
-        var distanceVector = DenseVector(0.0).t // The distance vector containing the distance between two vectors.
+    private[stsc] def euclideanDistances(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
+        val distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
 
         var i, j = 0
         for (i <- 0 until matrix.rows) {
             for (j <- i + 1 until matrix.rows) {
-                distanceVector = matrix(i, ::) - matrix(j, ::) // Xi - Xj | Yi - Yj
-                distanceVector *= distanceVector // (Xi - Xj)² | (Yi - Yj)²
-                distanceMatrix(i, j) = sqrt(sum(distanceVector)) // √(Xi - Xj)² + (Yi - Yj)² + ..., works like a rectangle triangle where distance² = i² + j²
+                distanceMatrix(i, j) = euclideanDistance(matrix(i, ::).t, matrix(j, ::).t) // breeze.linalg.functions.euclideanDistance
                 distanceMatrix(j, i) = distanceMatrix(i, j) // Symmetric matrix.
             }
         }
@@ -238,7 +236,7 @@ object Algorithm {
         }
 
         // Last rotation
-        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+        //rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
 
         // In rare cases the cost is Double.NaN, we handle this error here.
         if (cost equals Double.NaN) {
