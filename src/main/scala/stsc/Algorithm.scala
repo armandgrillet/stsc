@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvwrite, eigSym, max, sum, *}
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvwrite, eigSym, max, sum, svd, *}
 import breeze.linalg.functions.euclideanDistance
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
@@ -41,15 +41,17 @@ object Algorithm {
         val normalizedMatrix = normalizedAffinityMatrix(scaledMatrix)
 
         // Compute the largest eigenvectors
-        val eigenvectors = eigSym(normalizedMatrix).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
-        val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, maxClusters) {
-            case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
-        }
+        // val eigenvectors = eigSym(breeze.linalg.csvread(new File("./normalizedMatrix.csv"))).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
+        // val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, maxClusters) {
+        //     case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
+        // }
+        //csvwrite(new File("./evs3.csv"), largestEigenvectors, separator = ',')
+        //val largestEigenvectors = breeze.linalg.csvread(new File("./evs.csv"))
+        val largestEigenvectors = svd(normalizedMatrix).leftVectors(::, 0 until maxClusters)
 
         var costs: Map[Int, Double] = Map() // The costs, key = number of clusters and value = cost
         // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
-        // csvwrite(new File("./2evs.csv"), currentEigenvectors, separator = ',')
         var (cost, rotatedEigenvectors) = stsc(currentEigenvectors)
         costs += (minClusters -> cost) // Add the cost to the map.
         var absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
@@ -209,7 +211,7 @@ object Algorithm {
                     }
 
                     def trueDerivative() {
-                        val alpha = 0.46
+                        val alpha = 0.1
                         nablaJ = evaluateQualityGradient(theta, j, eigenvectors)
                         thetaNew(j) = theta(j) - alpha * nablaJ
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
@@ -223,7 +225,7 @@ object Algorithm {
                         }
                     }
 
-                    trueDerivative()
+                    numericalDerivative()
                 }
 
                 // If the new cost is not that better, we end the rotation.
