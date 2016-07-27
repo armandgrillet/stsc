@@ -7,20 +7,6 @@ import java.io.File
 import org.scalatest.{FlatSpec, Matchers}
 
 class AlgorithmTest extends FlatSpec with Matchers {
-    def keyForMaxValueWithMargin(qualities: Map[Int, Double]): Int = {
-        var maxValue = scala.Double.PositiveInfinity
-        var keyForMaxValue = 0
-        for ((k, v) <- qualities) {
-            if (v < maxValue) {
-                maxValue = v
-                keyForMaxValue = k
-            } else if (v < maxValue * 1.0001) {
-                keyForMaxValue = k
-            }
-        }
-        return keyForMaxValue
-    }
-
     def compressDenseVector(dv: DenseVector[Int], values: Int): DenseVector[Int] = {
         val differentValues = DenseVector.zeros[Int](values)
         var count = 0
@@ -38,9 +24,9 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataPath = getClass.getResource("/near.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix, 2, 2)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix, 2, 2)
 
-        keyForMaxValueWithMargin(clustersQualities) should be (2)
+        bestK should be (2)
         correctClusters should not be DenseVector.zeros[Int](matrix.rows)
         correctClusters should not be DenseVector.ones[Int](matrix.rows)
     }
@@ -50,59 +36,59 @@ class AlgorithmTest extends FlatSpec with Matchers {
         val dataPath = getClass.getResource("/0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (3)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(61, 139, 99))
+        bestK should be (3)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(61, 139, 99))
     }
 
     "The dataset 1" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/1.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (3)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(106, 102, 95))
+        bestK should be (3)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(106, 102, 95))
     }
 
     "The dataset 2" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/2.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (3)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(118, 75, 73))
+        bestK should be (3)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(118, 75, 73))
     }
 
     "The dataset 3" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/3.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (5)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(136, 116, 111, 150, 109))
+        bestK should be (5)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(136, 116, 111, 150, 109))
     }
 
     "The dataset 4" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/4.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (4)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(117, 123, 150, 122))
+        bestK should be (4)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(117, 123, 150, 122))
     }
 
     "The dataset 5" should "be correctly clustered" in {
         val dataPath = getClass.getResource("/5.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val (clustersQualities, correctClusters) = Algorithm.cluster(matrix)
+        val (bestK, clustersQualities, correctClusters) = Algorithm.cluster(matrix)
         println(clustersQualities)
-        keyForMaxValueWithMargin(clustersQualities) should be (3)
-        compressDenseVector(correctClusters, keyForMaxValueWithMargin(clustersQualities)) should be (DenseVector(56, 82, 100))
+        bestK should be (3)
+        compressDenseVector(correctClusters, bestK) should be (DenseVector(56, 82, 100))
     }
 }

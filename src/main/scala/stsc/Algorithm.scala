@@ -16,9 +16,9 @@ object Algorithm {
     * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
-    * @return a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters for the best cost
+    * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters for the best cost
     */
-    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Map[Int, Double], DenseVector[Int]) = {
+    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, Map[Int, Double], DenseVector[Int]) = {
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
         if (dataset.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
@@ -49,6 +49,7 @@ object Algorithm {
         //val largestEigenvectors = breeze.linalg.csvread(new File("./evs.csv"))
         val largestEigenvectors = svd(normalizedMatrix).leftVectors(::, 0 until maxClusters)
 
+        var bestK = minClusters
         var costs: Map[Int, Double] = Map() // The costs, key = number of clusters and value = cost
         // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
@@ -58,16 +59,17 @@ object Algorithm {
         var clusters = argmax(absoluteRotatedEigenvectors(*, ::))
 
         var group = 0
-        for (group <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
-            val eigenvectorToAdd = largestEigenvectors(::, group).toDenseMatrix.t // One new eigenvector at each turn.
+        for (k <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
+            val eigenvectorToAdd = largestEigenvectors(::, k).toDenseMatrix.t // One new eigenvector at each turn.
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
             val (tempCost, tempRotatedEigenvectors) = stsc(currentEigenvectors)
-            costs += (group + 1 -> tempCost) // Add the cost to the map.
+            costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
             if (tempCost <= cost * 1.0001) {
                 absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
                 clusters = argmax(absoluteRotatedEigenvectors(*, ::))
+                bestK = k + 1
             }
             if (tempCost < cost) {
                 cost = tempCost
@@ -75,7 +77,7 @@ object Algorithm {
         }
 
         val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
-        return (orderedCosts, clusters)
+        return (bestK, orderedCosts, clusters)
     }
 
     /** Returns the euclidean distances of a given dense matrix.
