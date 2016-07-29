@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, csvwrite, eigSym, max, sum, svd, *}
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, eigSym, max, sum, svd, *}
 import breeze.linalg.functions.euclideanDistance
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.stats.mean
@@ -41,12 +41,6 @@ object Algorithm {
         val normalizedMatrix = normalizedAffinityMatrix(scaledMatrix)
 
         // Compute the largest eigenvectors
-        // val eigenvectors = eigSym(breeze.linalg.csvread(new File("./normalizedMatrix.csv"))).eigenvectors // Get the eigenvectors of the normalized affinity matrix.
-        // val largestEigenvectors = DenseMatrix.tabulate(eigenvectors.rows, maxClusters) {
-        //     case (i, j) => eigenvectors(i, -(1 + j)) // Reverses the matrix to get the largest eigenvectors only.
-        // }
-        //csvwrite(new File("./evs3.csv"), largestEigenvectors, separator = ',')
-        //val largestEigenvectors = breeze.linalg.csvread(new File("./evs.csv"))
         val largestEigenvectors = svd(normalizedMatrix).leftVectors(::, 0 until maxClusters)
 
         var bestK = minClusters
@@ -88,7 +82,6 @@ object Algorithm {
     private[stsc] def euclideanDistances(matrix: DenseMatrix[Double]): DenseMatrix[Double] = {
         val distanceMatrix = DenseMatrix.zeros[Double](matrix.rows, matrix.rows) // Distance matrix, size rows x rows.
 
-        var i, j = 0
         for (i <- 0 until matrix.rows) {
             for (j <- i + 1 until matrix.rows) {
                 distanceMatrix(i, j) = euclideanDistance(matrix(i, ::).t, matrix(j, ::).t) // breeze.linalg.functions.euclideanDistance
@@ -112,7 +105,6 @@ object Algorithm {
             var localScale = DenseVector.zeros[Double](distanceMatrix.cols)
             var sortedVector = IndexedSeq(0.0)
 
-            var i = 0
             for (i <- 0 until distanceMatrix.cols) {
                 sortedVector = distanceMatrix(::, i).toArray.sorted // Ordered distances.
                 localScale(i) = sortedVector(k) // Kth nearest distance, the 0th neighbor is always 0 and sortedVector(1) is the first neighbor
@@ -131,7 +123,6 @@ object Algorithm {
     private[stsc] def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
         var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
-        var i, j = 0
         for (i <- 0 until distanceMatrix.rows) {
             for (j <- i + 1 until distanceMatrix.rows) {
                 affinityMatrix(i, j) = -scala.math.pow(distanceMatrix(i, j), 2) // -d(si, sj)²
@@ -176,37 +167,37 @@ object Algorithm {
 
         var rotatedEigenvectors = DenseMatrix.zeros[Double](0, 0)
 
-        var theta, thetaNew = DenseVector.zeros[Double](angles(eigenvectors))
+        val bigK = (eigenvectors.cols * (eigenvectors.cols - 1) / 2).toInt
+        var theta, thetaNew = DenseVector.zeros[Double](bigK)
 
         cost = evaluateCost(eigenvectors)
         old1Cost = cost
         old2Cost = cost
 
-        var i, j = 0
         breakable {
-            for (i <- 1 to 200) { // Max iterations = 200, as in the original paper code.
-                for (j <- 0 until angles(eigenvectors)) {
+            for (i <- 0 until 200) { // Max iterations = 200, as in the original paper code.
+                for (k <- 0 until theta.length) { // kth entry in the list composed of the (i, j) indexes
                     def numericalDerivative() {
                         val alpha = 0.1
                         // Move up.
-                        thetaNew(j) = theta(j) + alpha
+                        thetaNew(k) = theta(k) + alpha
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
                         costUp = evaluateCost(rotatedEigenvectors)
 
                         // Move down.
-                        thetaNew(j) = theta(j) - alpha
+                        thetaNew(k) = theta(k) - alpha
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
                         costDown = evaluateCost(rotatedEigenvectors)
 
                         // Update only if at least one of the new cost is better.
                         if (costUp < cost || costDown < cost) {
                             if (costUp < costDown) {
-                                theta(j) = theta(j) + alpha
-                                thetaNew(j) = theta(j)
+                                theta(k) = theta(k) + alpha
+                                thetaNew(k) = theta(k)
                                 cost = costUp
                             } else {
-                                theta(j) = theta(j) - alpha
-                                thetaNew(j) = theta(j)
+                                theta(k) = theta(k) - alpha
+                                thetaNew(k) = theta(k)
                                 cost = costDown
                             }
                         }
@@ -214,16 +205,16 @@ object Algorithm {
 
                     def trueDerivative() {
                         val alpha = 0.1
-                        nablaJ = evaluateQualityGradient(theta, j, eigenvectors)
-                        thetaNew(j) = theta(j) - alpha * nablaJ
+                        nablaJ = evaluateQualityGradient(theta, k, eigenvectors)
+                        thetaNew(k) = theta(k) - alpha * nablaJ
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
                         newCost = evaluateCost(rotatedEigenvectors)
 
                         if (newCost < cost) {
-                            theta(j) = thetaNew(j)
+                            theta(k) = thetaNew(k)
                             cost = newCost
                         } else {
-                            thetaNew(j) = theta(j)
+                            thetaNew(k) = theta(k)
                         }
                     }
 
@@ -240,23 +231,9 @@ object Algorithm {
         }
 
         // Last rotation
-        //rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
 
-        // In rare cases the cost is Double.NaN, we handle this error here.
-        if (cost equals Double.NaN) {
-            return (0, rotatedEigenvectors)
-        } else {
-            return (cost, rotatedEigenvectors)
-        }
-    }
-
-    /** Return the "angles" of a matrix, as defined in the original paper code.
-    *
-    * @param matrix the matrix to analyze
-    * @return the angles
-    */
-    private[stsc] def angles(matrix: DenseMatrix[Double]): Int = {
-        return (matrix.cols * (matrix.cols - 1) / 2).toInt
+        return (cost, rotatedEigenvectors)
     }
 
     /** Return the cost of a given rotation, follow the computation in the original paper code.
@@ -275,7 +252,7 @@ object Algorithm {
         val ik = DenseVector.zeros[Int](angles)
         val jk = DenseVector.zeros[Int](angles)
 
-        var i, j, k = 0
+        var k = 0
         for (i <- 0 until dims) {
             for (j <- (i + 1) until dims) {
                 ik(k) = i
@@ -287,16 +264,17 @@ object Algorithm {
     }
 
     private[stsc] def evaluateQualityGradient(theta: DenseVector[Double], angle: Int, matrix: DenseMatrix[Double]): Double = {
-        val (ik, jk) = indexes(angles(matrix), matrix.cols)
+        val (ik, jk) = indexes(theta.length, matrix.cols)
+        val entry = (ik(angle), jk(angle))
 
         // Build V, U, A
         var vForAngle = DenseMatrix.zeros[Double](matrix.cols, matrix.cols)
-        vForAngle(ik(angle),ik(angle)) = -sin(theta(angle))
-        vForAngle(ik(angle),jk(angle)) = cos(theta(angle))
-        vForAngle(jk(angle),ik(angle)) = -cos(theta(angle))
-        vForAngle(jk(angle),jk(angle)) = -sin(theta(angle))
-        val u1 = uAB(theta, 1, angle - 1, matrix.cols, angles(matrix))
-        val u2 = uAB(theta, angle + 1, angles(matrix) -1, matrix.cols, angles(matrix))
+        vForAngle(entry._1, entry._1) = -sin(theta(angle))
+        vForAngle(entry._1, entry._2) = cos(theta(angle))
+        vForAngle(entry._2, entry._1) = -cos(theta(angle))
+        vForAngle(entry._2, entry._2) = -sin(theta(angle))
+        val u1 = uAB(theta, 1, angle - 1, matrix.cols)
+        val u2 = uAB(theta, angle + 1, theta.length -1, matrix.cols)
 
         val a = matrix * u1 * vForAngle * u2
 
@@ -326,7 +304,7 @@ object Algorithm {
     * @return the Givens rotation
     */
     private[stsc] def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
-        val g = uAB(theta, 0, angles(matrix) - 1, matrix.cols, angles(matrix))
+        val g = uAB(theta, 0, theta.length - 1, matrix.cols)
         return matrix * g
     }
 
@@ -336,17 +314,16 @@ object Algorithm {
     * @param a
     * @param b
     * @param dims
-    * @param angles
     * @return the gradient
     */
-    private[stsc] def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int, angles: Int): DenseMatrix[Double] = {
+    private[stsc] def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int): DenseMatrix[Double] = {
         var uab = DenseMatrix.eye[Double](dims) // Create an empty identity matrix.
 
         if (b < a) {
             return uab
         }
 
-        val (ik, jk) = indexes(angles, dims)
+        val (ik, jk) = indexes(theta.length, dims)
 
         var tt, uIk = 0.0
         for (k <- a to b) {
