@@ -1,13 +1,12 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, eigSym, max, sum, svd, *}
+import breeze.linalg.{DenseMatrix, DenseVector, argmax, max, sum, svd, *}
 import breeze.linalg.functions.euclideanDistance
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
-import breeze.stats.mean
 
 import scala.collection.immutable.SortedMap
+import scala.math.exp
 import scala.util.control.Breaks.{break, breakable}
-import java.io.File
 
 /** Factory for gr.armand.stsc.Algorithm instances. */
 object Algorithm {
@@ -40,17 +39,15 @@ object Algorithm {
         // Build the normalized affinity matrix (step 3)
         val normalizedMatrix = normalizedAffinityMatrix(scaledMatrix)
 
-        // Compute the largest eigenvectors
+        // Compute the largest eigenvectors (step 4)
         val largestEigenvectors = svd(normalizedMatrix).leftVectors(::, 0 until maxClusters)
 
-        var bestK = minClusters
-        var costs: Map[Int, Double] = Map() // The costs, key = number of clusters and value = cost
+        var cBest = minClusters
         // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
         var (cost, rotatedEigenvectors) = stsc(currentEigenvectors)
-        costs += (minClusters -> cost) // Add the cost to the map.
-        var absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
-        var clusters = argmax(absoluteRotatedEigenvectors(*, ::))
+        var costs = Map(minClusters -> cost)
+        var bestRotatedEigenvectors = rotatedEigenvectors
 
         var group = 0
         for (k <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
@@ -61,9 +58,8 @@ object Algorithm {
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
             if (tempCost <= cost * 1.0001) {
-                absoluteRotatedEigenvectors = abs(rotatedEigenvectors)
-                clusters = argmax(absoluteRotatedEigenvectors(*, ::))
-                bestK = k + 1
+                bestRotatedEigenvectors = rotatedEigenvectors
+                cBest = k + 1
             }
             if (tempCost < cost) {
                 cost = tempCost
@@ -71,7 +67,9 @@ object Algorithm {
         }
 
         val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
-        return (bestK, orderedCosts, clusters)
+        val absoluteRotatedEigenvectors = abs(bestRotatedEigenvectors)
+        val z = argmax(absoluteRotatedEigenvectors(*, ::)) // The alignment result (step 8)
+        return (cBest, orderedCosts, z)
     }
 
     /** Returns the euclidean distances of a given dense matrix.
@@ -102,12 +100,11 @@ object Algorithm {
         if (k > distanceMatrix.cols - 1) {
             throw new IllegalArgumentException("Not enough observations (" + distanceMatrix.cols + ") for k (" + k + ").")
         } else {
-            var localScale = DenseVector.zeros[Double](distanceMatrix.cols)
-            var sortedVector = IndexedSeq(0.0)
+            val localScale = DenseVector.zeros[Double](distanceMatrix.cols)
 
             for (i <- 0 until distanceMatrix.cols) {
-                sortedVector = distanceMatrix(::, i).toArray.sorted // Ordered distances.
-                localScale(i) = sortedVector(k) // Kth nearest distance, the 0th neighbor is always 0 and sortedVector(1) is the first neighbor
+                val sortedDistances = distanceMatrix(::, i).toArray.sorted // Ordered distances.
+                localScale(i) = sortedDistances(k) // Kth nearest distance, the 0th neighbor is always 0 and sortedVector(1) is the first neighbor
             }
 
             return localScale
@@ -121,13 +118,13 @@ object Algorithm {
     * @return the locally scaled affinity matrix
     */
     private[stsc] def locallyScaledAffinityMatrix(distanceMatrix: DenseMatrix[Double], localScale: DenseVector[Double]): DenseMatrix[Double] = {
-        var affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
+        val affinityMatrix = DenseMatrix.zeros[Double](distanceMatrix.rows, distanceMatrix.cols) // Distance matrix, size rows x cols.
 
         for (i <- 0 until distanceMatrix.rows) {
             for (j <- i + 1 until distanceMatrix.rows) {
-                affinityMatrix(i, j) = -scala.math.pow(distanceMatrix(i, j), 2) // -d(si, sj)²
+                affinityMatrix(i, j) = -pow(distanceMatrix(i, j), 2) // -d(si, sj)²
                 affinityMatrix(i, j) /= (localScale(i) * localScale(j)) // -d(si, sj)² / lambi * lambj
-                affinityMatrix(i, j) = scala.math.exp(affinityMatrix(i, j)) // exp(-d(si, sj)² / lambi * lambj)
+                affinityMatrix(i, j) = exp(affinityMatrix(i, j)) // exp(-d(si, sj)² / lambi * lambj)
                 affinityMatrix(j, i) = affinityMatrix(i, j)
             }
         }
@@ -142,7 +139,7 @@ object Algorithm {
     */
     private[stsc] def normalizedAffinityMatrix(scaledMatrix: DenseMatrix[Double]): DenseMatrix[Double] = {
         val diagonalVector = DenseVector.tabulate(scaledMatrix.rows){i => 1 / sqrt(sum(scaledMatrix(i, ::))) } // Sum of each row, then power -0.5.
-        var normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
+        val normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
 
         for (row <- 0 until normalizedMatrix.rows) {
             for (col <- row + 1 until normalizedMatrix.cols) {
@@ -167,7 +164,7 @@ object Algorithm {
 
         var rotatedEigenvectors = DenseMatrix.zeros[Double](0, 0)
 
-        val bigK = (eigenvectors.cols * (eigenvectors.cols - 1) / 2).toInt
+        val bigK = eigenvectors.cols * (eigenvectors.cols - 1) / 2
         var theta, thetaNew = DenseVector.zeros[Double](bigK)
 
         cost = evaluateCost(eigenvectors)
@@ -204,7 +201,7 @@ object Algorithm {
                     }
 
                     def trueDerivative() {
-                        val alpha = 0.1
+                        val alpha = 0.46
                         nablaJ = evaluateQualityGradient(theta, k, eigenvectors)
                         thetaNew(k) = theta(k) - alpha * nablaJ
                         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
@@ -242,53 +239,61 @@ object Algorithm {
     * @return the cost, the bigger the better (generally less than 1)
     */
     private[stsc] def evaluateCost(matrix: DenseMatrix[Double]): Double = {
-        // Take the square of all entries and find the max of each row
         var squareMatrix = matrix :* matrix
         return sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
-        // return 1.0 - (cost / matrix.rows - 1.0) / matrix.cols
     }
 
-    private[stsc] def indexes(angles: Int, dims: Int): (DenseVector[Int], DenseVector[Int]) = {
-        val ik = DenseVector.zeros[Int](angles)
-        val jk = DenseVector.zeros[Int](angles)
-
-        var k = 0
-        for (i <- 0 until dims) {
-            for (j <- (i + 1) until dims) {
-                ik(k) = i
-                jk(k) = j
-                k += 1
+    /** Returns a lexicographical list of (i, j) following the third paragraph in the appendix.
+    *
+    * @param bigK N * (N - 1) / 2 as in the abstract of the stochastic gradient descent paper
+    * @param cols number of columns in the matrix we want to index
+    * @return the indexes, a list of tuples (i,j). For bigK and cols = 3 it is List((0,1), (0,2), (1,2))
+    */
+    private[stsc] def indexes(bigK: Int, cols: Int): List[(Int, Int)] = {
+        var i, j = 0
+        return List.tabulate(bigK)(_ => {
+            j += 1
+            if (j >= cols) {
+                i += 1
+                j = i + 1
             }
-        }
-        return (ik, jk)
+            (i, j)
+        })
     }
 
-    private[stsc] def evaluateQualityGradient(theta: DenseVector[Double], angle: Int, matrix: DenseMatrix[Double]): Double = {
-        val (ik, jk) = indexes(theta.length, matrix.cols)
-        val entry = (ik(angle), jk(angle))
+    /** Returns the quality gradient (nabla J in the appendix of the paper)
+    *
+    * @param theta
+    * @param k
+    * @param matrix
+    * @return the quality gradient
+    */
+    private[stsc] def evaluateQualityGradient(theta: DenseVector[Double], k: Int, matrix: DenseMatrix[Double]): Double = {
+        val ij = indexes(theta.length, matrix.cols)
+        val entry = ij(k)
 
         // Build V, U, A
         var vForAngle = DenseMatrix.zeros[Double](matrix.cols, matrix.cols)
-        vForAngle(entry._1, entry._1) = -sin(theta(angle))
-        vForAngle(entry._1, entry._2) = cos(theta(angle))
-        vForAngle(entry._2, entry._1) = -cos(theta(angle))
-        vForAngle(entry._2, entry._2) = -sin(theta(angle))
-        val u1 = uAB(theta, 1, angle - 1, matrix.cols)
-        val u2 = uAB(theta, angle + 1, theta.length -1, matrix.cols)
+        vForAngle(entry._1, entry._1) = -sin(theta(k))
+        vForAngle(entry._1, entry._2) = cos(theta(k))
+        vForAngle(entry._2, entry._1) = -cos(theta(k))
+        vForAngle(entry._2, entry._2) = -sin(theta(k))
+        val u1 = uAB(theta, 1, k - 1, matrix.cols)
+        val u2 = uAB(theta, k + 1, theta.length -1, matrix.cols)
 
         val a = matrix * u1 * vForAngle * u2
 
-        val y = rotateGivens(matrix, theta)
+        val z = rotateGivens(matrix, theta)
 
-        val maxValues = max(y(*, ::)) // Max of each row
-        val maxIndexCol = argmax(y(*, ::))
+        val maxValues = max(z(*, ::)) // Max of each row
+        val maxIndexCol = argmax(z(*, ::))
 
         // Compute gradient
         var nablaJ, tmp1, tmp2 = 0.0
         for (i <- 0 until matrix.rows) { // Loop over all rows
             for (j <- 0 until matrix.cols) { // Loop over all columns
-                tmp1 = a(i, j) * y(i, j) / (maxValues(i) * maxValues(i))
-                tmp2 = a(i, maxIndexCol(i)) * pow(y(i, j), 2) / pow(maxValues(i), 3)
+                tmp1 = a(i, j) * z(i, j) / (maxValues(i) * maxValues(i))
+                tmp2 = (z(i, j) * z(i, j)) * a(i, maxIndexCol(i)) / pow(maxValues(i), 3)
                 nablaJ += tmp1 - tmp2
             }
         }
@@ -323,15 +328,15 @@ object Algorithm {
             return uab
         }
 
-        val (ik, jk) = indexes(theta.length, dims)
+        val ij = indexes(theta.length, dims)
 
         var tt, uIk = 0.0
         for (k <- a to b) {
             tt = theta(k)
             for (i <- 0 until dims) {
-                uIk = uab(i, ik(k)) * cos(tt) - uab(i, jk(k)) * sin(tt)
-                uab(i, jk(k)) = uab(i, ik(k)) * sin(tt) + uab(i, jk(k)) * cos(tt)
-                uab(i, ik(k)) = uIk
+                uIk = uab(i, ij(k)._1) * cos(tt) - uab(i, ij(k)._2) * sin(tt)
+                uab(i, ij(k)._2) = uab(i, ij(k)._1) * sin(tt) + uab(i, ij(k)._2) * cos(tt)
+                uab(i, ij(k)._1) = uIk
             }
         }
 
