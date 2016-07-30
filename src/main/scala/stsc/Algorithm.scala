@@ -175,7 +175,6 @@ object Algorithm {
         breakable {
             for (i <- 0 until 200) { // Max iterations = 200, as in the original paper code.
                 for (k <- 0 until theta.length) { // kth entry in the list composed of the (i, j) indexes
-
                     def numericalDerivative() {
                         val alpha = 0.1
                         // Move up.
@@ -199,21 +198,6 @@ object Algorithm {
                                 thetaNew(k) = theta(k)
                                 cost = costDown
                             }
-                        }
-                    }
-
-                    def numericalDerivative2() {
-                        val alpha = 0.1
-                        nablaJ = evaluateNumericalQualityGradient(eigenvectors, theta, k, alpha)
-                        thetaNew(k) = theta(k) - alpha * nablaJ
-                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        newCost = evaluateCost(rotatedEigenvectors)
-
-                        if (newCost < cost) {
-                            theta(k) = thetaNew(k)
-                            cost = newCost
-                        } else {
-                            thetaNew(k) = theta(k)
                         }
                     }
 
@@ -317,13 +301,6 @@ object Algorithm {
         nablaJ = 2 * nablaJ / matrix.rows / matrix.cols
 
         return nablaJ
-    }
-
-    private[stsc] def evaluateNumericalQualityGradient(matrix: DenseMatrix[Double], theta: DenseVector[Double], k: Int, h: Double): Double = {
-        val originalRotation = rotateGivens(matrix, theta)
-        theta(k) = theta(k) + h
-        val newRotation = rotateGivens(matrix, theta)
-        return (evaluateCost(newRotation) - evaluateCost(originalRotation)) / h
     }
 
     /** Givens rotation of a given matrix
