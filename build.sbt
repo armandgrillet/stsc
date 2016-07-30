@@ -22,6 +22,8 @@ libraryDependencies  ++= Seq(
     "org.scalatest" %% "scalatest" % "2.2.6" % "test",
     // Benchmarks
     "com.storm-enroute" %% "scalameter" % "0.7"
+    // Logs
+    //"org.slf4j" % "slf4j-simple" % "1.6.4"
 )
 
 testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework")
