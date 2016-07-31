@@ -58,7 +58,7 @@ object Algorithm {
             costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
-            if (tempCost <= cost * 1.0001) {
+            if (tempCost <= cost * 1.001) {
                 bestRotatedEigenvectors = rotatedEigenvectors
                 cBest = k + 1
             }
@@ -220,7 +220,7 @@ object Algorithm {
                 }
 
                 // If the new cost is not that better, we end the rotation.
-                if (i > 2 && (old2Cost - cost) < (0.0001 * old2Cost)) {
+                if (i > 2 && (old2Cost - cost) < (0.001 * old2Cost)) {
                     break
                 }
                 old2Cost = old1Cost
@@ -228,8 +228,7 @@ object Algorithm {
             }
         }
 
-        // Last rotation
-        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
 
         return (cost, rotatedEigenvectors)
     }
