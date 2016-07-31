@@ -220,7 +220,7 @@ object Algorithm {
                 }
 
                 // If the new quality is not that better, we end the rotation.
-                if (i > 2 && (quality - old2Quality) < (0.0001 * old2Quality)) {
+                if (i > 2 && (quality - old2Quality) < (0.001 * old2Quality)) {
                     break
                 }
                 old2Quality = old1Quality
@@ -228,8 +228,7 @@ object Algorithm {
             }
         }
 
-        // Last rotation
-        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
 
         return (quality, rotatedEigenvectors)
     }
