@@ -58,7 +58,7 @@ object Algorithm {
             costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
-            if (tempCost <= cost * 1.001) {
+            if (tempCost <= cost * 1.0001) {
                 bestRotatedEigenvectors = rotatedEigenvectors
                 cBest = k + 1
             }
@@ -216,11 +216,26 @@ object Algorithm {
                         }
                     }
 
-                    numericalDerivative()
+                    def trueNumericalDerivative() {
+                        val alpha = 0.001
+                        nablaJ = evaluateNumericalQualityGradient(eigenvectors, theta, k, alpha)
+                        thetaNew(k) = theta(k) - alpha * nablaJ
+                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
+                        newCost = evaluateCost(rotatedEigenvectors)
+
+                        if (newCost < cost) {
+                            theta(k) = thetaNew(k)
+                            cost = newCost
+                        } else {
+                            thetaNew(k) = theta(k)
+                        }
+                    }
+
+                    trueNumericalDerivative()
                 }
 
                 // If the new cost is not that better, we end the rotation.
-                if (i > 2 && (old2Cost - cost) < (0.001 * old2Cost)) {
+                if (i > 2 && (old2Cost - cost) < (0.0001 * old2Cost)) {
                     break
                 }
                 old2Cost = old1Cost
@@ -229,7 +244,6 @@ object Algorithm {
         }
 
         rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
-
         return (cost, rotatedEigenvectors)
     }
 
@@ -300,6 +314,14 @@ object Algorithm {
         nablaJ = 2 * nablaJ / matrix.rows / matrix.cols
 
         return nablaJ
+    }
+
+    private[stsc] def evaluateNumericalQualityGradient(matrix: DenseMatrix[Double], theta: DenseVector[Double], k: Int, h: Double): Double = {
+        theta(k) = theta(k) + h
+        val upRotation = rotateGivens(matrix, theta)
+        theta(k) = theta(k) - 2 * h
+        val downRotation = rotateGivens(matrix, theta)
+        return (evaluateCost(upRotation) - evaluateCost(downRotation)) / ( 2 * h)
     }
 
     /** Givens rotation of a given matrix
