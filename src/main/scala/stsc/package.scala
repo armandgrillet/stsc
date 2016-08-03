@@ -3,10 +3,10 @@ package stsc
 /** Provides a k-d tree class to cut a dataset and the self-tuning spectral clustering algorithm.
   *
   * ==Overview==
-  * The main class to use is the self-tuning spectral clustering algorithm, [[gr.armand.stsc.Algorithm]]:
+  * The main class to use is the self-tuning spectral clustering algorithm, [[gr.armand.stsc.STSC]]:
   * {{{
-  * scala> import gr.armand.stsc.Algorithm
-  * scala> val (clustersQualities, correctClusters) = Algorithm.cluster(dataset)
+  * scala> import gr.armand.stsc.STSC
+  * scala> val (clustersQualities, correctClusters) = STSC.cluster(dataset)
   * }}}
   *
   * If you include [[gr.armand.stsc.KDTree]], you can

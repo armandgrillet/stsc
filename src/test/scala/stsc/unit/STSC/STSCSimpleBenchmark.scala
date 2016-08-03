@@ -12,7 +12,7 @@ class STSCSimpleBenchmark extends FunSuite {
             val dataPath = getClass.getResource("/simplestCase.csv").getPath()
             val dataset = new File(dataPath)
             val matrix = breeze.linalg.csvread(dataset)
-            val result = Algorithm.cluster(matrix, 2, 2)
+            val result = STSC.cluster(matrix, 2, 2)
         }
         println("Total time : " + time)
     }

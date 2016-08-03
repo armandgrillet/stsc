@@ -6,7 +6,7 @@ import breeze.stats.distributions.{Gaussian, MultivariateGaussian}
 import org.scalameter._
 import org.scalatest.FunSuite
 
-class DistanceClustersBenchmark extends FunSuite {
+class STSCMinDistanceBenchmark extends FunSuite {
     def compressDenseVector(dv: DenseVector[Int], values: Int): DenseVector[Int] = {
         val differentValues = DenseVector.zeros[Int](values)
         var count = 0
@@ -31,7 +31,7 @@ class DistanceClustersBenchmark extends FunSuite {
                 val samplesMatrix = DenseMatrix.zeros[Double](sample1.length * 2, 1)
                 samplesMatrix(::, 0) := DenseVector((sample1 ++ sample2).toArray)
 
-                z = compressDenseVector(Algorithm.cluster(samplesMatrix)._3, 2)
+                z = compressDenseVector(STSC.cluster(samplesMatrix)._3, 2)
                 println(distance)
                 distance -= 1
             }

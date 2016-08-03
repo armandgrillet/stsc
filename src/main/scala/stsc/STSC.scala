@@ -9,8 +9,8 @@ import scala.collection.immutable.SortedMap
 import scala.math.{BigDecimal, exp}
 import scala.util.control.Breaks.{break, breakable}
 
-/** Factory for gr.armand.stsc.Algorithm instances. */
-object Algorithm {
+/** Factory for gr.armand.stsc.STSC instances. */
+object STSC {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
     * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
@@ -46,7 +46,7 @@ object Algorithm {
         var cBest = minClusters
         // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
-        var (cost, rotatedEigenvectors) = stsc(currentEigenvectors)
+        var (cost, rotatedEigenvectors) = bestRotation(currentEigenvectors)
         var costs = Map(minClusters -> cost)
         var bestRotatedEigenvectors = rotatedEigenvectors
 
@@ -54,7 +54,7 @@ object Algorithm {
         for (k <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
             val eigenvectorToAdd = largestEigenvectors(::, k).toDenseMatrix.t // One new eigenvector at each turn.
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
-            val (tempCost, tempRotatedEigenvectors) = stsc(currentEigenvectors)
+            val (tempCost, tempRotatedEigenvectors) = bestRotation(currentEigenvectors)
             costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 
@@ -153,12 +153,12 @@ object Algorithm {
     }
 
     //
-    /** Step 5 of the self-tuning spectral clustering algorithm, recovery the rotation R whiwh best align the eigenvectors.
+    /** Step 5 of the self-tuning spectral clustering algorithm, recover the rotation R which best aligns the eigenvectors.
     *
     * @param eigenvectors the eigenvectors
-    * @return the cost of the best rotation and the linked dense matrix.
+    * @return the cost of the best rotation and the rotation as a DenseMatrix.
     */
-    private[stsc] def stsc(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
+    private[stsc] def bestRotation(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
         var nablaJ, cost = 0.0 // Variables used to recover the aligning rotation.
         var newCost, old1Cost, old2Cost = 0.0 // Variables to compute the descend through true derivative.
         var costUp, costDown = 0.0 // Variables to descend through numerical derivative.

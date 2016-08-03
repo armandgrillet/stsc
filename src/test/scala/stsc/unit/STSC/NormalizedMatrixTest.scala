@@ -9,7 +9,7 @@ class NormalizedMatrixTest extends FlatSpec with Matchers {
 
     "The normalized matrix" should "work" in {
         val scaledMatrix = DenseMatrix((0.0, 1.0, 3.0), (1.0, 0.0, 6.0), (3.0, 6.0, 0.0))
-        val normalizedMatrix = Algorithm.normalizedAffinityMatrix(scaledMatrix)
+        val normalizedMatrix = STSC.normalizedAffinityMatrix(scaledMatrix)
         val correctResult = DenseMatrix((0.0, 1 / (math.sqrt(7) * 2), 0.5), (1 / (2 * math.sqrt(7)), 0.0, 2 / math.sqrt(7)), (0.5, 2 / math.sqrt(7), 0.0))
         for (row <- 0 until normalizedMatrix.rows) {
             for (col <- 0 until normalizedMatrix.cols) {
