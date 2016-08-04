@@ -6,7 +6,7 @@ import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.optimize._
 
 import scala.collection.immutable.SortedMap
-import scala.math.{BigDecimal, exp}
+import scala.math.exp
 import scala.util.control.Breaks.{break, breakable}
 
 /** Factory for gr.armand.stsc.STSC instances. */
