@@ -16,9 +16,9 @@ object STSC {
     * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
-    * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters for the best cost
+    * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
     */
-    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, Map[Int, Double], DenseVector[Int]) = {
+    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, Map[Int, Double], Array[Int]) = {
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
         if (dataset.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
@@ -69,7 +69,7 @@ object STSC {
 
         val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
         val absoluteRotatedEigenvectors = abs(bestRotatedEigenvectors)
-        val z = argmax(absoluteRotatedEigenvectors(*, ::)) // The alignment result (step 8)
+        val z = argmax(absoluteRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
         return (cBest, orderedCosts, z)
     }
 

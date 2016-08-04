@@ -7,7 +7,7 @@ import org.scalameter._
 import org.scalatest.FunSuite
 
 class STSCMinDistanceBenchmark extends FunSuite {
-    def compressDenseVector(dv: DenseVector[Int], values: Int): DenseVector[Int] = {
+    def compressDenseVector(dv: Array[Int], values: Int): DenseVector[Int] = {
         val differentValues = DenseVector.zeros[Int](values)
         var count = 0
         for (i <- 0 until dv.length) {
