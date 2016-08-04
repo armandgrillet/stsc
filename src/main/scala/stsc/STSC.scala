@@ -43,14 +43,12 @@ object STSC {
         // Compute the largest eigenvectors (step 4)
         val largestEigenvectors = svd(normalizedMatrix).leftVectors(::, 0 until maxClusters)
 
-        var cBest = minClusters
-        // The clusters, a dense vector where clusters(0) is the cluster where is the first observation.
+        var cBest = minClusters // The best group number.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
         var (cost, rotatedEigenvectors) = bestRotation(currentEigenvectors)
-        var costs = Map(minClusters -> cost)
-        var bestRotatedEigenvectors = rotatedEigenvectors
+        var costs = Map(minClusters -> cost) // List of the costs.
+        var bestRotatedEigenvectors = rotatedEigenvectors // The matrix of rotated eigenvectors having the minimal cost.
 
-        var group = 0
         for (k <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
             val eigenvectorToAdd = largestEigenvectors(::, k).toDenseMatrix.t // One new eigenvector at each turn.
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
@@ -142,10 +140,10 @@ object STSC {
         val diagonalVector = DenseVector.tabulate(scaledMatrix.rows){i => 1 / sqrt(sum(scaledMatrix(i, ::))) } // Sum of each row, then power -0.5.
         val normalizedMatrix = DenseMatrix.zeros[Double](scaledMatrix.rows, scaledMatrix.cols)
 
-        for (row <- 0 until normalizedMatrix.rows) {
-            for (col <- row + 1 until normalizedMatrix.cols) {
-                normalizedMatrix(row, col) = diagonalVector(row) * scaledMatrix(row, col) * diagonalVector(col)
-                normalizedMatrix(col, row) = normalizedMatrix(row, col)
+        for (i <- 0 until normalizedMatrix.rows) {
+            for (j <- i + 1 until normalizedMatrix.cols) {
+                normalizedMatrix(i, j) = diagonalVector(i) * scaledMatrix(i, j) * diagonalVector(j)
+                normalizedMatrix(j, i) = normalizedMatrix(i, j)
             }
         }
 
@@ -161,77 +159,28 @@ object STSC {
     private[stsc] def bestRotation(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
         var nablaJ, cost = 0.0 // Variables used to recover the aligning rotation.
         var newCost, old1Cost, old2Cost = 0.0 // Variables to compute the descend through true derivative.
-        var costUp, costDown = 0.0 // Variables to descend through numerical derivative.
-
-        var rotatedEigenvectors = DenseMatrix.zeros[Double](0, 0)
 
         val bigK = eigenvectors.cols * (eigenvectors.cols - 1) / 2
         var theta, thetaNew = DenseVector.zeros[Double](bigK)
 
-        cost = evaluateCost(eigenvectors)
+        cost = j(eigenvectors)
         old1Cost = cost
         old2Cost = cost
 
         breakable {
             for (i <- 0 until 200) { // Max iterations = 200, as in the original paper code.
                 for (k <- 0 until theta.length) { // kth entry in the list composed of the (i, j) indexes
-                    def numericalDerivative() {
-                        val alpha = 0.1
-                        // Move up.
-                        thetaNew(k) = BigDecimal(theta(k) + alpha).setScale(1, BigDecimal.RoundingMode.HALF_UP).toDouble
-                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        costUp = evaluateCost(rotatedEigenvectors)
+                    val alpha = 0.001
+                    nablaJ = numericalQualityGradient(eigenvectors, theta, k, alpha)
+                    thetaNew(k) = theta(k) - alpha * nablaJ
+                    newCost = j(givensRotation(eigenvectors, thetaNew))
 
-                        // Move down.
-                        thetaNew(k) = BigDecimal(theta(k) - alpha).setScale(1, BigDecimal.RoundingMode.HALF_UP).toDouble
-                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        costDown = evaluateCost(rotatedEigenvectors)
-
-                        // Update only if at least one of the new cost is better.
-                        if (costUp < cost || costDown < cost) {
-                            if (costUp < costDown) {
-                                theta(k) = theta(k) + alpha
-                                thetaNew(k) = theta(k)
-                                cost = costUp
-                            } else {
-                                theta(k) = theta(k) - alpha
-                                thetaNew(k) = theta(k)
-                                cost = costDown
-                            }
-                        }
+                    if (newCost < cost) {
+                        theta(k) = thetaNew(k)
+                        cost = newCost
+                    } else {
+                        thetaNew(k) = theta(k)
                     }
-
-                    def trueDerivative() {
-                        val alpha = 0.46
-                        nablaJ = evaluateQualityGradient(theta, k, eigenvectors)
-                        thetaNew(k) = theta(k) - alpha * nablaJ
-                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        newCost = evaluateCost(rotatedEigenvectors)
-
-                        if (newCost < cost) {
-                            theta(k) = thetaNew(k)
-                            cost = newCost
-                        } else {
-                            thetaNew(k) = theta(k)
-                        }
-                    }
-
-                    def trueNumericalDerivative() {
-                        val alpha = 0.001
-                        nablaJ = evaluateNumericalQualityGradient(eigenvectors, theta, k, alpha)
-                        thetaNew(k) = theta(k) - alpha * nablaJ
-                        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew)
-                        newCost = evaluateCost(rotatedEigenvectors)
-
-                        if (newCost < cost) {
-                            theta(k) = thetaNew(k)
-                            cost = newCost
-                        } else {
-                            thetaNew(k) = theta(k)
-                        }
-                    }
-
-                    trueNumericalDerivative()
                 }
 
                 // If the new cost is not that better, we end the rotation.
@@ -243,7 +192,7 @@ object STSC {
             }
         }
 
-        rotatedEigenvectors = rotateGivens(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
+        val rotatedEigenvectors = givensRotation(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
         return (cost, rotatedEigenvectors)
     }
 
@@ -252,76 +201,17 @@ object STSC {
     * @param matrix the rotation to analyze
     * @return the cost, the bigger the better (generally less than 1)
     */
-    private[stsc] def evaluateCost(matrix: DenseMatrix[Double]): Double = {
-        var squareMatrix = matrix :* matrix
+    private[stsc] def j(matrix: DenseMatrix[Double]): Double = {
+        val squareMatrix = matrix :* matrix
         return sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
     }
 
-    /** Returns a lexicographical list of (i, j) following the third paragraph in the appendix.
-    *
-    * @param bigK N * (N - 1) / 2 as in the abstract of the stochastic gradient descent paper
-    * @param cols number of columns in the matrix we want to index
-    * @return the indexes, a list of tuples (i,j). For bigK and cols = 3 it is List((0,1), (0,2), (1,2))
-    */
-    private[stsc] def indexes(bigK: Int, cols: Int): List[(Int, Int)] = {
-        var i, j = 0
-        return List.tabulate(bigK)(_ => {
-            j += 1
-            if (j >= cols) {
-                i += 1
-                j = i + 1
-            }
-            (i, j)
-        })
-    }
-
-    /** Returns the quality gradient (nabla J in the appendix of the paper)
-    *
-    * @param theta
-    * @param k
-    * @param matrix
-    * @return the quality gradient
-    */
-    private[stsc] def evaluateQualityGradient(theta: DenseVector[Double], k: Int, matrix: DenseMatrix[Double]): Double = {
-        val ij = indexes(theta.length, matrix.cols)
-        val entry = ij(k)
-
-        // Build V, U, A
-        var vForAngle = DenseMatrix.zeros[Double](matrix.cols, matrix.cols)
-        vForAngle(entry._1, entry._1) = -sin(theta(k))
-        vForAngle(entry._1, entry._2) = cos(theta(k))
-        vForAngle(entry._2, entry._1) = -cos(theta(k))
-        vForAngle(entry._2, entry._2) = -sin(theta(k))
-        val u1 = uAB(theta, 1, k - 1, matrix.cols)
-        val u2 = uAB(theta, k + 1, theta.length -1, matrix.cols)
-
-        val a = matrix * u1 * vForAngle * u2
-
-        val z = rotateGivens(matrix, theta)
-
-        val maxValues = max(z(*, ::)) // Max of each row
-        val maxIndexCol = argmax(z(*, ::))
-
-        // Compute gradient
-        var nablaJ, tmp1, tmp2 = 0.0
-        for (i <- 0 until matrix.rows) { // Loop over all rows
-            for (j <- 0 until matrix.cols) { // Loop over all columns
-                tmp1 = a(i, j) * z(i, j) / (maxValues(i) * maxValues(i))
-                tmp2 = (z(i, j) * z(i, j)) * a(i, maxIndexCol(i)) / pow(maxValues(i), 3)
-                nablaJ += tmp1 - tmp2
-            }
-        }
-        nablaJ = 2 * nablaJ / matrix.rows / matrix.cols
-
-        return nablaJ
-    }
-
-    private[stsc] def evaluateNumericalQualityGradient(matrix: DenseMatrix[Double], theta: DenseVector[Double], k: Int, h: Double): Double = {
+    private[stsc] def numericalQualityGradient(matrix: DenseMatrix[Double], theta: DenseVector[Double], k: Int, h: Double): Double = {
         theta(k) = theta(k) + h
-        val upRotation = rotateGivens(matrix, theta)
-        theta(k) = theta(k) - 2 * h
-        val downRotation = rotateGivens(matrix, theta)
-        return (evaluateCost(upRotation) - evaluateCost(downRotation)) / ( 2 * h)
+        val upRotation = givensRotation(matrix, theta)
+        theta(k) = theta(k) - 2 * h // -2 * because we cancel the previous operation.
+        val downRotation = givensRotation(matrix, theta)
+        return (j(upRotation) - j(downRotation)) / ( 2 * h)
     }
 
     /** Givens rotation of a given matrix
@@ -330,38 +220,29 @@ object STSC {
     * @param theta the angle of the rotation
     * @return the Givens rotation
     */
-    private[stsc] def rotateGivens(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
-        val g = uAB(theta, 0, theta.length - 1, matrix.cols)
-        return matrix * g
-    }
+    private[stsc] def givensRotation(matrix: DenseMatrix[Double], theta: DenseVector[Double]): DenseMatrix[Double] = {
+        // Find the coordinate planes (i, j).
+        var i, j = 0
+        val ij = List.tabulate(theta.length)(_ => {
+            j += 1
+            if (j >= matrix.cols) {
+                i += 1
+                j = i + 1
+            }
+            (i, j)
+        })
 
-    /** Build U(a,b) (check appendix A of the original paper for more info)
-    *
-    * @param theta the angle of the rotation
-    * @param a
-    * @param b
-    * @param dims
-    * @return the gradient
-    */
-    private[stsc] def uAB(theta: DenseVector[Double], a: Int, b: Int, dims: Int): DenseMatrix[Double] = {
-        var uab = DenseMatrix.eye[Double](dims) // Create an empty identity matrix.
-
-        if (b < a) {
-            return uab
-        }
-
-        val ij = indexes(theta.length, dims)
+        val g = DenseMatrix.eye[Double](matrix.cols) // Create an empty identity matrix.
 
         var tt, uIk = 0.0
-        for (k <- a to b) {
+        for (k <- 0 until theta.length) {
             tt = theta(k)
-            for (i <- 0 until dims) {
-                uIk = uab(i, ij(k)._1) * cos(tt) - uab(i, ij(k)._2) * sin(tt)
-                uab(i, ij(k)._2) = uab(i, ij(k)._1) * sin(tt) + uab(i, ij(k)._2) * cos(tt)
-                uab(i, ij(k)._1) = uIk
+            for (i <- 0 until matrix.cols) {
+                uIk = g(i, ij(k)._1) * cos(tt) - g(i, ij(k)._2) * sin(tt)
+                g(i, ij(k)._2) = g(i, ij(k)._1) * sin(tt) + g(i, ij(k)._2) * cos(tt)
+                g(i, ij(k)._1) = uIk
             }
         }
-
-        return uab
+        return matrix * g
     }
 }
