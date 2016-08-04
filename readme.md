@@ -21,7 +21,7 @@ val bestGroupNumber = STSC.cluster(dataset, 2, 10)._1
 
 cBest is the most likely number of clusters in the dataset. It will always be between the minimum and maximum value of k.
 costs is a map with the cost returned for each possible number of clusters k.
-clusters is a DenseVector with a length equals to the number of rows in the dataset, clusters(i) represents the cluster where should be the observation i in the dataset.
+clusters is an Array of Int with a length equals to the number of rows in the dataset, clusters(i) represents the cluster where should be the observation i in the dataset.
 
 If you include `gr.armand.stsc.KDTree`, you can also create a k-d tree to divide a dataset:
 
