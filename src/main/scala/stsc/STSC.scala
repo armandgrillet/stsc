@@ -9,6 +9,8 @@ import scala.collection.immutable.SortedMap
 import scala.math.exp
 import scala.util.control.Breaks.{break, breakable}
 
+import org.apache.spark.SparkContext
+
 /** Factory for gr.armand.stsc.STSC instances. */
 object STSC {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
@@ -69,6 +71,10 @@ object STSC {
         val absoluteRotatedEigenvectors = abs(bestRotatedEigenvectors)
         val z = argmax(absoluteRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
         return (cBest, orderedCosts, z)
+    }
+
+    def parallelCluster(context: SparkContext/*, dataset: DenseMatrix[Double], kdTree: KDTree, minTileClusters: Int = 2, maxTileClusters: Int = 6*/): (Int/*, Map[Int, Double], Array[Int]*/) = {
+        return 0
     }
 
     /** Returns the euclidean distances of a given dense matrix.

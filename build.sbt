@@ -21,7 +21,9 @@ libraryDependencies  ++= Seq(
     "org.scalactic" %% "scalactic" % "2.2.6",
     "org.scalatest" %% "scalatest" % "2.2.6" % "test",
     // Benchmarks
-    "com.storm-enroute" %% "scalameter" % "0.7"
+    "com.storm-enroute" %% "scalameter" % "0.7",
+    // Spark
+    "org.apache.spark" %% "spark-core" % "2.0.0"
     // Logs
     //"org.slf4j" % "slf4j-simple" % "1.6.4"
 )
