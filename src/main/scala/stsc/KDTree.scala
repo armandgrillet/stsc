@@ -18,12 +18,12 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
 
     val dimensions = tiles.value.mins.length
 
-    def leafs(): List[Tile] = {
-        val leafs = List.fill(tiles.leafs)(Tile(DenseVector.zeros[Double](1), DenseVector.zeros[Double](1)))
+    def smallTiles(): Array[Tile] = {
+        val leafs = Array.fill[Tile](tiles.leafs)(Tile(DenseVector.zeros[Double](1), DenseVector.zeros[Double](1)))
         var count = 0
         def leafsHelper(tree: Node) {
             if (tree.isLeaf) {
-                leafs.updated(count, tree.value)
+                leafs(count) = tree.value
                 count += 1
             } else {
                 leafsHelper(tree.left)
@@ -31,12 +31,11 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
             }
         }
         leafsHelper(tiles)
-
         return leafs
     }
 
     /* Returns a densematrix containing all the leafs of the tree. */
-    def leafsAsDenseMatrix(): DenseMatrix[Double] = {
+    def smallTilesAsDenseMatrix(): DenseMatrix[Double] = {
         val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
         var count = 0
         def asDenseMatrixHelper(tree: Node) {
@@ -177,7 +176,6 @@ object KDTree {
         val borderWidth = tilesDenseMatrix(0, 0)
         val dimensions = tilesDenseMatrix.cols / 2
         val tilesDenseVector = DenseVector.fill(tilesDenseMatrix.rows - 1){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
-        var i = 0
         for (i <- 1 until tilesDenseMatrix.rows) {
             val rowAsTile = tilesDenseMatrix(i, ::).t
             tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1))
