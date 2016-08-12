@@ -23,11 +23,11 @@ libraryDependencies  ++= Seq(
     // Benchmarks
     "com.storm-enroute" %% "scalameter" % "0.7",
     // Spark
-    "org.apache.spark" %% "spark-core" % "2.0.0"
+    "org.apache.spark" %% "spark-core" % "2.0.0",
+    "org.apache.spark" %% "spark-mllib" % "2.0.0"
     // Logs
     //"org.slf4j" % "slf4j-simple" % "1.6.4"
 )
 
 testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework")
 logBuffered := false
-parallelExecution in Test := false

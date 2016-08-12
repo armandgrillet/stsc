@@ -10,7 +10,9 @@ class ParallelClusterTest extends FlatSpec with Matchers {
     "The simplest test" should "work" in {
         val conf = new SparkConf().setAppName("ParallelClusterTest").setMaster("local")
         val sc = new SparkContext(conf)
-        val a = STSC.parallelCluster(sc)
+
+        val dataPath = getClass.getResource("/0.csv").getPath()
+        val a = STSC.sparkCluster(sc, dataPath)
         println(a)
     }
 }

@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{BitVector, DenseMatrix, DenseVector, Transpose}
+import breeze.linalg.{BitVector, DenseMatrix, DenseVector, Transpose, *}
 import breeze.numerics.abs
 
 /** A tile to contain observations. Can be of any dimensions.
@@ -50,5 +50,17 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
     /** @return the tile as a Transpose with all the minimums then all the maximums. */
     def asTranspose(): Transpose[DenseVector[Double]] = {
         return DenseVector.vertcat(mins, maxs).t
+    }
+
+    def filter(dataset: DenseMatrix[Double], borderWidth: Double): DenseMatrix[Double] = {
+        val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
+        var numberOfObservations = 0
+        for (row <- dataset(*, ::)) {
+            if (has(row, borderWidth)) {
+                observations(numberOfObservations, ::) := row.t
+                numberOfObservations += 1
+            }
+        }
+        return observations(0 until numberOfObservations, ::)
     }
 }

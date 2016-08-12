@@ -10,17 +10,24 @@ import scala.math.exp
 import scala.util.control.Breaks.{break, breakable}
 
 import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
+import org.apache.spark.mllib.linalg.Vectors
+
+import java.io.File
 
 /** Factory for gr.armand.stsc.STSC instances. */
 object STSC {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param dataset the dataset to cluster, each row being an observation with each column representing one dimension
+    * @param csv the path of the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
     * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
     */
-    def cluster(dataset: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, Map[Int, Double], Array[Int]) = {
+    def cluster(csvPath: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, Map[Int, Double], Array[Int]) = {
+        val file = new File(csvPath)
+        val dataset = breeze.linalg.csvread(file)
+
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
         if (dataset.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
@@ -73,7 +80,13 @@ object STSC {
         return (cBest, orderedCosts, z)
     }
 
-    def parallelCluster(context: SparkContext/*, dataset: DenseMatrix[Double], kdTree: KDTree, minTileClusters: Int = 2, maxTileClusters: Int = 6*/): (Int/*, Map[Int, Double], Array[Int]*/) = {
+    def sparkCluster(sc: SparkContext, csvPath: String/*,  tessellationTree: KDTree, minTileClusters: Int = 2, maxTileClusters: Int = 6*/): Int = {
+        val data = sc.textFile(csvPath)
+        val parsedData = data.map(s => Vectors.dense(s.split(',').map(_.toDouble))).cache()
+        println(parsedData)
+        // for (leaf <- leafs.foreach) {
+        //     val dataset = leaf.filter(dataset, tessellationTree.borderWidth)
+        // }
         return 0
     }
 

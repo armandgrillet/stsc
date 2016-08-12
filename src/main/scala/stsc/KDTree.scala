@@ -18,6 +18,23 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
 
     val dimensions = tiles.value.mins.length
 
+    def leafs(): List[Tile] = {
+        val leafs = List.fill(tiles.leafs)(Tile(DenseVector.zeros[Double](1), DenseVector.zeros[Double](1)))
+        var count = 0
+        def leafsHelper(tree: Node) {
+            if (tree.isLeaf) {
+                leafs.updated(count, tree.value)
+                count += 1
+            } else {
+                leafsHelper(tree.left)
+                leafsHelper(tree.right)
+            }
+        }
+        leafsHelper(tiles)
+
+        return leafs
+    }
+
     /* Returns a densematrix containing all the leafs of the tree. */
     def leafsAsDenseMatrix(): DenseMatrix[Double] = {
         val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
@@ -235,24 +252,12 @@ object KDTree {
     }: (Tile, Tile)
 
     private[stsc] def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): Node = {
-        val observations = observationsInTile(dataset, parentTile)
+        val observations = parentTile.filter(dataset, 0)
         if (observations.rows > maxObservations) {
             val childrenTiles = cutFunction(parentTile, observations)
             return Node(parentTile, cutWithMaxObservations(observations, childrenTiles._1, maxObservations, cutFunction), cutWithMaxObservations(observations, childrenTiles._2, maxObservations, cutFunction))
         } else {
             return Node(parentTile)
         }
-    }
-
-    private[stsc] def observationsInTile(dataset: DenseMatrix[Double], tile: Tile): DenseMatrix[Double] = {
-        val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
-        var numberOfObservations = 0
-        for (row <- dataset(*,::)) {
-            if (tile.has(row, 0)) {
-                observations(numberOfObservations, ::) := row.t
-                numberOfObservations += 1
-            }
-        }
-        return observations(0 until numberOfObservations, ::)
     }
 }

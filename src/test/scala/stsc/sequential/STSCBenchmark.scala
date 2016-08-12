@@ -1,10 +1,12 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector}
+import breeze.linalg.{DenseMatrix, DenseVector, csvwrite}
 import breeze.stats.distributions.{Gaussian, MultivariateGaussian}
 
 import org.scalameter._
 import org.scalatest.FunSuite
+
+import java.io.File
 
 class STSCBenchmark extends FunSuite {
     test("Should work with 2 clusters of 100 observations in 1 dimension") {
@@ -12,11 +14,13 @@ class STSCBenchmark extends FunSuite {
         val sample2 = Gaussian(5, 1).sample(100)
         val samplesMatrix = DenseMatrix.zeros[Double](sample1.length * 2, 1)
         samplesMatrix(::, 0) := DenseVector((sample1 ++ sample2).toArray)
+        csvwrite(new File("test.csv"), samplesMatrix, separator = ',')
         val time = measure {
-            val result = STSC.cluster(samplesMatrix)
+            val result = STSC.cluster("test.csv")
             println(result._1)
         }
         println("Total time : " + time)
+        new File("test.csv").delete()
     }
 
     // test("Should work with 2 clusters of 1000 observations in 1 dimension") {
@@ -48,11 +52,13 @@ class STSCBenchmark extends FunSuite {
         }
 
         val samplesMatrix = DenseMatrix.vertcat(sample1, sample2)
+        csvwrite(new File("test.csv"), samplesMatrix, separator = ',')
         val time = measure {
-            val result = STSC.cluster(samplesMatrix)
+            val result = STSC.cluster("test.csv")
             println(result._1)
         }
         println("Total time : " + time)
+        new File("test.csv").delete()
     }
 
     // test("Should work with 2 clusters of 1000 observations in 2 dimensions") {
