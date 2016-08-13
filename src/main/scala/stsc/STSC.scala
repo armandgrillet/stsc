@@ -1,6 +1,6 @@
 package stsc
 
-import breeze.linalg.{DenseMatrix, DenseVector, argmax, max, sum, svd, *}
+import breeze.linalg.{Axis, DenseMatrix, DenseVector, argmax, max, sum, svd, *}
 import breeze.linalg.functions.euclideanDistance
 import breeze.numerics.{abs, cos, pow, sin, sqrt}
 import breeze.optimize._
@@ -28,10 +28,10 @@ object STSC {
     */
     def cluster(csvPath: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
         val file = new File(csvPath)
-        val dataset = breeze.linalg.csvread(file)
+        val matrix = breeze.linalg.csvread(file)
 
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
-        if (dataset.rows == 0) {
+        if (matrix.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
         }
         if (minClusters < 0) {
@@ -41,8 +41,75 @@ object STSC {
             throw new IllegalArgumentException("The minimum number of clusters has to be inferior to the maximum number of clusters.")
         }
 
+        return clusterMatrix(matrix, minClusters, maxClusters)
+    }
+
+    def sparkCluster(/*sc: SparkContext, */csvPath: String, tilesPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6): Int = {
+        val tree = KDTree.fromCSV(tilesPath)
+        val smallTiles = tree.smallTiles() // Get the smallest tiles of the dataset.
+        // We put the observations in their respective tiles in order to parallelize the processing.
+        var orderedObs = Array.tabulate(smallTiles.length)(ArrayBuffer(tree.dimensions.toDouble, minTileClusters.toDouble, maxTileClusters.toDouble) ++ smallTiles(_).asArray)
+        val smallTilesMap = smallTiles.zipWithIndex.toMap // A map with values 0..n to easily place each observation in its correct tile.
+        val csv = Source.fromFile(csvPath) // Read the dataset.
+        for (line <- csv.getLines) { // Analyze each observation.
+            val vector = DenseVector(line.split(',').map(_.toDouble)) // Get a DenseVector (easier to manage).
+            for (tile <- tree.owningTiles(vector)) { // Get where should be the observation, cna be in more than 1 tile.
+                orderedObs(smallTilesMap(tile)) ++= vector.toArray // Add the observation to the corresponding tile.
+            }
+        }
+        csv.close
+
+        val anonymousClustering = (tileInfo: ArrayBuffer[Double]) => {
+            val dims = tileInfo(0).toInt
+            val minClusters = tileInfo(1).toInt
+            val maxClusters = tileInfo(2).toInt
+            tileInfo.trimStart(3) // Remove the info.
+            // We recreate the tile as we will use it when computing the centers of each cluster.
+            val mins = new DenseVector(tileInfo.slice(0, dims).toArray)
+            val maxs = new DenseVector(tileInfo.slice(dims, dims * 2).toArray)
+            val tile = Tile(mins, maxs)
+            tileInfo.trimStart(dims * 2) // We remove the info of the tile.
+            // Create a densematrix of the observation in the tile. We have to get the transpose as the data must be column major when creating the DM.
+            val matrix = new DenseMatrix(dims, tileInfo.length / dims, tileInfo.toArray).t
+            val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters, maxClusters)
+            val clustersArray = Array.tabulate(cBest){i => DenseMatrix.zeros[Double](clusters.count(_ == i), dims)}
+            val counter = Array.fill[Int](cBest)(0)
+            for (i <- 0 until matrix.rows) {
+                clustersArray(clusters(i))(counter(clusters(i)), ::) := matrix(i, ::)
+                counter(clusters(i)) += 1
+            }
+            val clustersLength = Array.tabulate(cBest)(clustersArray(_).rows)
+            val clustersInTile = ArrayBuffer.empty[Int]
+            val clustersIndexesInTile = ArrayBuffer.empty[Int]
+            for (i <- 0 until clustersLength.length) {
+                val clusterCenter = sum(clustersArray(i), Axis._0) :/ clustersLength(i).toDouble
+                if (tile.has(clusterCenter.t, 0)) {
+                    clustersInTile += clustersLength(i)
+                    clustersIndexesInTile += i
+                }
+            }
+
+            val resultMatrix = DenseMatrix.zeros[Double](clustersInTile.sum, dims)
+
+            for (i <- 0 until clustersIndexesInTile.length) {
+                val start = clustersInTile.slice(0, i).sum
+                for (j <- 0 until clustersInTile(i)) {
+                    resultMatrix(start + j, ::) := clustersArray(clustersIndexesInTile(i))(j, ::)
+                }
+            }
+
+            (resultMatrix, clustersInTile.toArray)
+        }: (DenseMatrix[Double], Array[Int])
+
+        // val observationsInTiles = sc.parallelize(orderedObs) // The RDD.
+        // val clusters = observationsInTiles.map(tile => )
+        val (test, aie) = anonymousClustering(orderedObs(0))
+        return 0
+    }
+
+    private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
         // Compute local scale (step 1).
-        val distances = euclideanDistances(dataset)
+        val distances = euclideanDistances(matrix)
         val scale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
 
         // Build locally scaled affinity matrix (step 2).
@@ -80,39 +147,6 @@ object STSC {
         val absoluteRotatedEigenvectors = abs(bestRotatedEigenvectors)
         val z = argmax(absoluteRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
         return (cBest, orderedCosts, z)
-    }
-
-    def sparkCluster(/* sc: SparkContext, */csvPath: String, tilesPath: String/*, minTileClusters: Int = 2, maxTileClusters: Int = 6*/): Int = {
-        val tree = KDTree.fromCSV(tilesPath)
-        val smallTiles = tree.smallTiles() // Get the smallest tiles of the dataset.
-        // We put the observations in their respective tiles in order to parallelize the processing.
-        var orderedObs = Array.tabulate(smallTiles.length)(ArrayBuffer.empty[Double] ++ smallTiles(_).asArray)
-        val smallTilesMap = smallTiles.zipWithIndex.toMap // A map with values 0..n to easily place each observation in its correct tile.
-        val csv = Source.fromFile(csvPath) // Read the dataset.
-        for (line <- csv.getLines) { // Analyze each observation.
-            val vector = DenseVector(line.split(',').map(_.toDouble)) // Get a DenseVector (easier to manage).
-            for (tile <- tree.owningTiles(vector)) { // Get where should be the observation, cna be in more than 1 tile.
-                orderedObs(smallTilesMap(tile)) ++= vector.toArray // Add the observation to the corresponding tile.
-            }
-        }
-        csv.close
-
-        // In the map of the rdd
-        // We recreate the tile as we will use it when computing the centers of each cluster.
-        val mins = new DenseVector(orderedObs(0).slice(0, tree.dimensions).toArray)
-        val maxs = new DenseVector(orderedObs(0).slice(tree.dimensions, tree.dimensions * 2).toArray)
-        val tile = Tile(mins, maxs)
-        orderedObs(0).trimStart(tree.dimensions * 2) // We remove the info of the tile.
-         // Create a densematrix of the observation in the tile. We have to get the transpose as the data must be column major when creating the DM.
-        val matrix = new DenseMatrix(tree.dimensions, orderedObs(0).length / tree.dimensions, orderedObs(0).toArray).t
-        println(matrix)
-        // val data = sc.textFile(csvPath)
-        // val parsedData = data.map(s => Vectors.dense(s.split(',').map(_.toDouble))).cache()
-        // println(parsedData)
-        // for (leaf <- leafs.foreach) {
-        //     val dataset = leaf.filter(dataset, tessellationTree.borderWidth)
-        // }
-        return 0
     }
 
     /** Returns the euclidean distances of a given dense matrix.
