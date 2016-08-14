@@ -12,7 +12,7 @@ class ParallelClusterTest extends FlatSpec with Matchers {
 
         val dataPath = getClass.getResource("/tt0.csv").getPath()
         val ttPath = getClass.getResource("/kdt0.csv").getPath()
-        val a = STSC.sparkCluster(sc, dataPath, ttPath)
+        val a = STSC.sparkCluster(sc, dataPath, ttPath, "./clusters")
         println(a)
     }
 }

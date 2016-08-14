@@ -43,7 +43,7 @@ object STSC {
         return clusterMatrix(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(sc: SparkContext, csvPath: String, tilesPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6): Int = {
+    def sparkCluster(sc: SparkContext, csvPath: String, tilesPath: String, csvOutputPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
         val tree = KDTree.fromCSV(tilesPath)
         val borderWidth = sc.broadcast(tree.borderWidth)
         val dim = sc.broadcast(tree.dimensions)
@@ -92,22 +92,24 @@ object STSC {
                 }
             }
 
-            val resultMatrix = DenseMatrix.zeros[Double](clustersInTile.sum, dim.value)
+            val result = new Array[String](clustersInTile.sum)
 
             for (i <- 0 until clustersIndexesInTile.length) {
                 val start = clustersInTile.slice(0, i).sum
                 for (j <- 0 until clustersInTile(i)) {
-                    resultMatrix(start + j, ::) := clustersArray(clustersIndexesInTile(i))(j, ::)
+                    result(start + j) = clustersArray(clustersIndexesInTile(i))(j, ::).t.toArray.mkString(", ") + ", " + i.toString + ".0"
                 }
             }
 
-            (resultMatrix, clustersInTile.toArray)
-        }: (DenseMatrix[Double], Array[Int])
+            (result)
+        }: Array[String]
 
-        val orderedMatrix = tiles.map(tile => anonymousClustering(tile._1, tile._2))
+        val clusters = tiles.map(tile => anonymousClustering(tile._1, tile._2))
+        clusters.map(obs => obs.mkString("\n")).saveAsTextFile(csvOutputPath)
+        //val (orderedObs, clusts) = clusters.reduce((obs1, obs2) => (DenseMatrix.vertcat(obs1._1, obs2._1), obs1._2 ++ obs2._2))
+        //println(orderedObs)
         // println(orderedMatrix)
         // println(clusters)
-        return 0
     }
 
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
