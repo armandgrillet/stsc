@@ -13,7 +13,6 @@ import scala.util.control.Breaks.{break, breakable}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.mllib.linalg.Vectors
 
 import java.io.File
 
@@ -44,35 +43,39 @@ object STSC {
         return clusterMatrix(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(/*sc: SparkContext, */csvPath: String, tilesPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6): Int = {
+    def sparkCluster(sc: SparkContext, csvPath: String, tilesPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6): Int = {
         val tree = KDTree.fromCSV(tilesPath)
-        val smallTiles = tree.smallTiles() // Get the smallest tiles of the dataset.
-        // We put the observations in their respective tiles in order to parallelize the processing.
-        var orderedObs = Array.tabulate(smallTiles.length)(ArrayBuffer(tree.dimensions.toDouble, minTileClusters.toDouble, maxTileClusters.toDouble) ++ smallTiles(_).asArray)
-        val smallTilesMap = smallTiles.zipWithIndex.toMap // A map with values 0..n to easily place each observation in its correct tile.
-        val csv = Source.fromFile(csvPath) // Read the dataset.
-        for (line <- csv.getLines) { // Analyze each observation.
-            val vector = DenseVector(line.split(',').map(_.toDouble)) // Get a DenseVector (easier to manage).
-            for (tile <- tree.owningTiles(vector)) { // Get where should be the observation, cna be in more than 1 tile.
-                orderedObs(smallTilesMap(tile)) ++= vector.toArray // Add the observation to the corresponding tile.
-            }
-        }
-        csv.close
+        val borderWidth = sc.broadcast(tree.borderWidth)
+        val dim = sc.broadcast(tree.dimensions)
+        val smallTiles = sc.broadcast(tree.smallTiles.map(_.asArray()))
+        val minTiles = sc.broadcast(minTileClusters)
+        val maxTiles = sc.broadcast(maxTileClusters)
+        val obs = sc.textFile(csvPath)
 
-        val anonymousClustering = (tileInfo: ArrayBuffer[Double]) => {
-            val dims = tileInfo(0).toInt
-            val minClusters = tileInfo(1).toInt
-            val maxClusters = tileInfo(2).toInt
-            tileInfo.trimStart(3) // Remove the info.
-            // We recreate the tile as we will use it when computing the centers of each cluster.
-            val mins = new DenseVector(tileInfo.slice(0, dims).toArray)
-            val maxs = new DenseVector(tileInfo.slice(dims, dims * 2).toArray)
-            val tile = Tile(mins, maxs)
-            tileInfo.trimStart(dims * 2) // We remove the info of the tile.
-            // Create a densematrix of the observation in the tile. We have to get the transpose as the data must be column major when creating the DM.
-            val matrix = new DenseMatrix(dims, tileInfo.length / dims, tileInfo.toArray).t
-            val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters, maxClusters)
-            val clustersArray = Array.tabulate(cBest){i => DenseMatrix.zeros[Double](clusters.count(_ == i), dims)}
+        val anonymousOrdering = (vS: String) => {
+            val v = DenseVector(vS.split(',').map(_.toDouble))
+            val inTiles = ArrayBuffer[Array[Double]]()
+            for (i <- 0 until smallTiles.value.length) {
+                val tile = Tile(new DenseVector(smallTiles.value(i).take(dim.value)), new DenseVector(smallTiles.value(i).takeRight(dim.value)))
+                if (tile.has(v, borderWidth.value)) {
+                    inTiles += tile.asArray()
+                }
+            }
+            (v, inTiles.toArray)
+        }: (DenseVector[Double], Array[Array[Double]])
+
+        val vectorsAndTiles = obs.map(ob => anonymousOrdering(ob))
+        val flatVectorsAndTiles = vectorsAndTiles.flatMapValues(identity[Array[Array[Double]]])
+        val tiles = flatVectorsAndTiles.groupBy(_._2.toList).values.map(it => (it.map(_._1).toArray, it.head._2)) // map back to requested format
+
+        val anonymousClustering = (vectors: Array[DenseVector[Double]], tileA: Array[Double]) => {
+            val tile = Tile(new DenseVector(tileA.take(dim.value)), new DenseVector(tileA.takeRight(dim.value)))
+            val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
+            for (i <- 0 until vectors.length) {
+                matrix(i, ::) := vectors(i).t
+            }
+            val (cBest, costs, clusters) = clusterMatrix(matrix, minTiles.value, maxTiles.value)
+            val clustersArray = Array.tabulate(cBest){i => DenseMatrix.zeros[Double](clusters.count(_ == i), dim.value)}
             val counter = Array.fill[Int](cBest)(0)
             for (i <- 0 until matrix.rows) {
                 clustersArray(clusters(i))(counter(clusters(i)), ::) := matrix(i, ::)
@@ -89,7 +92,7 @@ object STSC {
                 }
             }
 
-            val resultMatrix = DenseMatrix.zeros[Double](clustersInTile.sum, dims)
+            val resultMatrix = DenseMatrix.zeros[Double](clustersInTile.sum, dim.value)
 
             for (i <- 0 until clustersIndexesInTile.length) {
                 val start = clustersInTile.slice(0, i).sum
@@ -101,9 +104,9 @@ object STSC {
             (resultMatrix, clustersInTile.toArray)
         }: (DenseMatrix[Double], Array[Int])
 
-        // val observationsInTiles = sc.parallelize(orderedObs) // The RDD.
-        // val clusters = observationsInTiles.map(tile => )
-        val (test, aie) = anonymousClustering(orderedObs(0))
+        val orderedMatrix = tiles.map(tile => anonymousClustering(tile._1, tile._2))
+        // println(orderedMatrix)
+        // println(clusters)
         return 0
     }
 
