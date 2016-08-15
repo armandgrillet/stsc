@@ -43,33 +43,38 @@ object STSC {
         return clusterMatrix(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(sc: SparkContext, csvPath: String, tilesPath: String, csvOutputPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
-        val tree = KDTree.fromCSV(tilesPath)
+    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, csvOutputPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
+        val treePath = sc.broadcast(kdTreePath)
+        val tree = KDTree.fromCSV(kdTreePath)
+
+        val smallTilesMap = scala.collection.mutable.HashMap.empty[DenseVector[Double], Int]
+        val smallTilesArray = tree.smallTiles.map(_.toDenseVector())
+        for (i <- 0 until smallTilesArray.length) {
+            smallTilesMap += (smallTilesArray(i) -> i)
+        }
+        val smallTiles = sc.broadcast(smallTilesMap.toMap)
+
         val borderWidth = sc.broadcast(tree.borderWidth)
         val dim = sc.broadcast(tree.dimensions)
-        val smallTiles = sc.broadcast(tree.smallTiles.map(_.asArray()))
         val minTiles = sc.broadcast(minTileClusters)
         val maxTiles = sc.broadcast(maxTileClusters)
         val obs = sc.textFile(csvPath)
 
         val anonymousOrdering = (vS: String) => {
+            val tree = KDTree.fromCSV(treePath.value)
             val v = DenseVector(vS.split(',').map(_.toDouble))
-            val inTiles = ArrayBuffer[Array[Double]]()
-            for (i <- 0 until smallTiles.value.length) {
-                val tile = Tile(new DenseVector(smallTiles.value(i).take(dim.value)), new DenseVector(smallTiles.value(i).takeRight(dim.value)))
-                if (tile.has(v, borderWidth.value)) {
-                    inTiles += tile.asArray()
-                }
+            val owningTiles = tree.owningTiles(v).map(_.toDenseVector())
+            val tuples = ArrayBuffer.empty[(DenseVector[Double], DenseVector[Double])]
+            for (i <- 0 until owningTiles.length) {
+                tuples += ((owningTiles(i), v))
             }
-            (v, inTiles.toArray)
-        }: (DenseVector[Double], Array[Array[Double]])
+            tuples.toSeq
+        }: Seq[(DenseVector[Double], DenseVector[Double])]
 
-        val vectorsAndTiles = obs.map(ob => anonymousOrdering(ob))
-        val flatVectorsAndTiles = vectorsAndTiles.flatMapValues(identity[Array[Array[Double]]])
-        val tiles = flatVectorsAndTiles.groupBy(_._2.toList).values.map(it => (it.map(_._1).toArray, it.head._2)) // map back to requested format
+        val tilesAndVectors = obs.flatMap(ob => anonymousOrdering(ob)).groupByKey().map{case (x, iter) => (x, iter.toArray)} // groupByKey returns an iterator, not an array.
 
-        val anonymousClustering = (vectors: Array[DenseVector[Double]], tileA: Array[Double]) => {
-            val tile = Tile(new DenseVector(tileA.take(dim.value)), new DenseVector(tileA.takeRight(dim.value)))
+        val anonymousClustering = (tileDV: DenseVector[Double], vectors: Array[DenseVector[Double]]) => {
+            val tile = Tile(tileDV(0 until dim.value), tileDV(dim.value to -1))
             val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
             for (i <- 0 until vectors.length) {
                 matrix(i, ::) := vectors(i).t
@@ -96,20 +101,16 @@ object STSC {
 
             for (i <- 0 until clustersIndexesInTile.length) {
                 val start = clustersInTile.slice(0, i).sum
+                val cluster = smallTiles.value(tileDV) + "." + i.toString
                 for (j <- 0 until clustersInTile(i)) {
-                    result(start + j) = clustersArray(clustersIndexesInTile(i))(j, ::).t.toArray.mkString(", ") + ", " + i.toString + ".0"
+                    result(start + j) = clustersArray(clustersIndexesInTile(i))(j, ::).t.toArray.mkString(", ") + ", " + cluster
                 }
             }
 
             (result)
         }: Array[String]
 
-        val clusters = tiles.map(tile => anonymousClustering(tile._1, tile._2))
-        clusters.map(obs => obs.mkString("\n")).saveAsTextFile(csvOutputPath)
-        //val (orderedObs, clusts) = clusters.reduce((obs1, obs2) => (DenseMatrix.vertcat(obs1._1, obs2._1), obs1._2 ++ obs2._2))
-        //println(orderedObs)
-        // println(orderedMatrix)
-        // println(clusters)
+        tilesAndVectors.map(tile => anonymousClustering(tile._1, tile._2)).map(obs => obs.mkString("\n")).saveAsTextFile(csvOutputPath)
     }
 
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {

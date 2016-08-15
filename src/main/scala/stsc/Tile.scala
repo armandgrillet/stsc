@@ -48,8 +48,13 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
     }
 
     /** @return the tile as an Array with all the minimums then all the maximums. */
-    def asArray(): Array[Double] = {
+    def toArray(): Array[Double] = {
         return DenseVector.vertcat(mins, maxs).toArray
+    }
+
+    /** @return the tile as a DenseVector with all the minimums then all the maximums. */
+    def toDenseVector(): DenseVector[Double] = {
+        return DenseVector.vertcat(mins, maxs)
     }
 
     /** @return the tile as a Transpose with all the minimums then all the maximums. */

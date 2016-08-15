@@ -5,7 +5,7 @@ import breeze.numerics.abs
 import breeze.stats.median
 
 import java.io.File
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.ArrayBuffer
 
 /** A k-d tree to divide a daset into multiple tiles.
 *
@@ -84,8 +84,8 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
     * @param observation the observation to check, represented as a DenseVector where every value is the coordinates in a dimension.
     * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
     */
-    def owningTiles(observation: DenseVector[Double]): List[Tile] = {
-        var owningTiles = ListBuffer.empty[Tile]
+    def owningTiles(observation: DenseVector[Double]): Array[Tile] = {
+        var owningTiles = ArrayBuffer.empty[Tile]
 
         def owningTilesHelper(Node: Node) {
             if (Node.isLeaf) {
@@ -102,7 +102,7 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
         }
 
         owningTilesHelper(tiles)
-        return owningTiles.toList
+        return owningTiles.toArray
     }
 
     /** Returns the tile owning a given observation, must be within the strict edges of the tile.
