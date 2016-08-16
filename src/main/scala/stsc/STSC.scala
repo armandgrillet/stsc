@@ -47,45 +47,45 @@ object STSC {
         val treePath = sc.broadcast(kdTreePath)
         val tree = KDTree.fromCSV(kdTreePath)
 
-        val smallTilesMap = scala.collection.mutable.HashMap.empty[DenseVector[Double], Int]
-        val smallTilesArray = tree.smallTiles.map(_.toDenseVector())
-        for (i <- 0 until smallTilesArray.length) {
-            smallTilesMap += (smallTilesArray(i) -> i)
-        }
-        val smallTiles = sc.broadcast(smallTilesMap.toMap)
-
+        val smallTiles = sc.broadcast(tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap) // Map with smallTiles(tile) being the position of the tile, giving us a unique ID.
         val borderWidth = sc.broadcast(tree.borderWidth)
         val dim = sc.broadcast(tree.dimensions)
         val minClusters = sc.broadcast(minTileClusters)
         val maxClusters = sc.broadcast(maxTileClusters)
-        val obs = sc.textFile(csvPath)
 
         val anonymousOrdering = (vS: String) => {
-            val tree = KDTree.fromCSV(treePath.value)
             val v = DenseVector(vS.split(',').map(_.toDouble))
+            val tree = KDTree.fromCSV(treePath.value)
             val owningTiles = tree.owningTiles(v).map(_.toDenseVector())
-            val tuples = ArrayBuffer.empty[(DenseVector[Double], DenseVector[Double])]
-            for (i <- 0 until owningTiles.length) {
-                tuples += ((owningTiles(i), v))
-            }
-            tuples.toSeq
+            Seq.tabulate(owningTiles.length)(i => (owningTiles(i), v))
         }: Seq[(DenseVector[Double], DenseVector[Double])]
 
-        val tilesAndVectors = obs.flatMap(ob => anonymousOrdering(ob)).groupByKey().map{case (x, iter) => (x, iter.toArray)} // groupByKey returns an iterator, not an array.
+        val tilesAndVectors = sc.textFile(csvPath).flatMap(anonymousOrdering(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
 
         val anonymousClustering = (tileDV: DenseVector[Double], vectors: Array[DenseVector[Double]]) => {
             val tile = Tile(tileDV(0 until dim.value), tileDV(dim.value to -1))
+            val tileID = smallTiles.value(tileDV)
             val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
             for (i <- 0 until vectors.length) {
                 matrix(i, ::) := vectors(i).t
             }
             val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters.value, maxClusters.value)
-            val obsAndClusters = ArrayBuffer.empty[(DenseVector[Double], Int, Int)]
-            for (i <- 0 until vectors.length) {
-                obsAndClusters += ((vectors(i), smallTiles.value(tileDV), clusters(i)))
-            }
+            val clustersAndObs = Array.tabulate(vectors.length)(i => (clusters(i), vectors(i))).groupBy(_._1)
 
-            obsAndClusters.toSeq
+            val result = ArrayBuffer.empty[(DenseVector[Double], Int, Int)]
+            for ((cluster, obs) <- clustersAndObs) {
+                val obsAsDM = DenseMatrix.zeros[Double](obs.length, dim.value)
+                for ((ob, i) <- obs.zipWithIndex) {
+                    obsAsDM(i, ::) := ob._2.t
+                }
+                val clusterCenter = sum(obsAsDM, Axis._0) :/ obs.length.toDouble
+                if (tile.has(clusterCenter.t, 0)) {
+                    for (ob <- obs) {
+                        result += ((ob._2, tileID, cluster))
+                    }
+                }
+            }
+            result.toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
         val result = tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2))
