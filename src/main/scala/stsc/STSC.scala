@@ -14,6 +14,9 @@ import scala.util.control.Breaks.{break, breakable}
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
+
 import java.io.File
 
 /** Factory for gr.armand.stsc.STSC instances. */
@@ -88,8 +91,13 @@ object STSC {
             result.toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
-        val result = tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2))
-        result.map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile(csvOutputPath)
+        FileUtil.fullyDelete(new File("/tmp/result.csv"))
+        FileUtil.fullyDelete(new File(csvOutputPath))
+        tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result.csv")
+        val hadoopConfig = new Configuration()
+        val hdfs = FileSystem.get(hadoopConfig)
+        FileUtil.copyMerge(hdfs, new Path("/tmp/result.csv"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+        FileUtil.fullyDelete(new File("/tmp/result.csv"))
     }
 
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
