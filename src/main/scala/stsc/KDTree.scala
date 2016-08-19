@@ -60,7 +60,7 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
         var tilesDenseMatrix = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
         tilesDenseMatrix(0, 0) = borderWidth
 
-        val tilesDenseVector = DenseVector.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
+        val tilesDenseVector = Array.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
 
         def toCSVHelper(tree: Node, position: Int) {
             tilesDenseVector(position) = tree.value
@@ -71,12 +71,26 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
         }
         toCSVHelper(tiles, 0)
 
-        var i = 0
         for (i <- 0 until tiles.length) {
             tilesDenseMatrix(i + 1, ::) := tilesDenseVector(i).asTranspose()
         }
 
         csvwrite(new File(filePath), tilesDenseMatrix, separator = ',')
+    }
+
+    override def toString(): String = {
+        val tilesArray = Array.fill[String](tiles.length)("")
+
+        def toCSVHelper(tree: Node, position: Int) {
+            tilesArray(position) = tree.value.toString()
+            if (!tree.isLeaf) {
+                toCSVHelper(tree.left, 2 * position + 1)
+                toCSVHelper(tree.right, 2 * position + 2)
+            }
+        }
+        toCSVHelper(tiles, 0)
+
+        return borderWidth.toString + "," +  Array.fill[String](dimensions * 2 - 1)("0.0").mkString(",") + "\n" + tilesArray.mkString("\n")
     }
 
     /** Returns the tile(s) owning a given observation.
@@ -169,7 +183,20 @@ object KDTree {
     * @return the k-d tree.
     */
     def fromCSV(filePath: String): KDTree = {
-        var tilesDenseMatrix = csvread(new File(filePath))
+        return fromMatrix(csvread(new File(filePath)))
+    }
+
+    /** Initialize a k-d tree using a given String. The String must have a specific structure created by toCSV().
+    *
+    * @param text the string representing the k-d tree.
+    * @return the k-d tree.
+    */
+    def fromString(text: String): KDTree = {
+        val textArr = text.split("\n").map(l => l.split(","))
+        return fromMatrix(DenseMatrix.tabulate(textArr.length,textArr.head.length)((i,j) => textArr(i)(j).toDouble))
+    }
+
+    private[stsc] def fromMatrix(tilesDenseMatrix: DenseMatrix[Double]): KDTree = {
         if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
         if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
 
@@ -181,15 +208,15 @@ object KDTree {
             tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1))
         }
 
-        def fromCSVHelper(i: Int): Node = {
+        def fromMatrixHelper(i: Int): Node = {
             if (2 * i + 2 < tilesDenseVector.length) {
-                return Node(tilesDenseVector(i), fromCSVHelper(2 * i + 1), fromCSVHelper(2 * i + 2))
+                return Node(tilesDenseVector(i), fromMatrixHelper(2 * i + 1), fromMatrixHelper(2 * i + 2))
             } else {
                 return Node(tilesDenseVector(i))
             }
         }
 
-        var tiles = fromCSVHelper(0)
+        var tiles = fromMatrixHelper(0)
 
         return new KDTree(tiles, borderWidth)
     }

@@ -6,8 +6,6 @@ import breeze.stats.distributions.{Gaussian, MultivariateGaussian}
 import org.scalameter._
 import org.scalatest.FunSuite
 
-import java.io.File
-
 class STSCMinDistanceBenchmark extends FunSuite {
     def compressDenseVector(dv: Array[Int], values: Int): DenseVector[Int] = {
         val differentValues = DenseVector.zeros[Int](values)
@@ -32,13 +30,11 @@ class STSCMinDistanceBenchmark extends FunSuite {
                 val sample2 = Gaussian(distance, 1).sample(100)
                 val samplesMatrix = DenseMatrix.zeros[Double](sample1.length * 2, 1)
                 samplesMatrix(::, 0) := DenseVector((sample1 ++ sample2).toArray)
-                csvwrite(new File("test.csv"), samplesMatrix, separator = ',')
-                z = compressDenseVector(STSC.cluster("test.csv")._3, 2)
+                z = compressDenseVector(STSC.cluster(samplesMatrix)._3, 2)
                 println(distance)
                 distance -= 1
             }
         }
         println("Total time : " + time)
-        new File("test.csv").delete()
     }
 }

@@ -23,15 +23,12 @@ import java.io.File
 object STSC {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param csv the path of the dataset to cluster, each row being an observation with each column representing one dimension
+    * @param csv the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
     * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
     */
-    def cluster(csvPath: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
-        val file = new File(csvPath)
-        val matrix = breeze.linalg.csvread(file)
-
+    def cluster(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
         // Three possible exceptions: empty dataset, minClusters less than 0, minClusters more than maxClusters.
         if (matrix.rows == 0) {
             throw new IllegalArgumentException("The dataset does not contains any observations.")
@@ -46,9 +43,22 @@ object STSC {
         return clusterMatrix(matrix, minClusters, maxClusters)
     }
 
+    /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
+    *
+    * @param csvPath the path of the dataset to cluster, each row being an observation with each column representing one dimension
+    * @param minClusters the minimum number of clusters in the dataset
+    * @param maxClusters the maximum number of clusters in the dataset
+    * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
+    */
+    def clusterCSV(csvPath: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
+        val file = new File(csvPath)
+        val matrix = breeze.linalg.csvread(file)
+        return cluster(matrix, minClusters, maxClusters)
+    }
+
     def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, csvOutputPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
-        val treePath = sc.broadcast(kdTreePath)
         val tree = KDTree.fromCSV(kdTreePath)
+        val treeString = sc.broadcast(tree.toString())
 
         val smallTiles = sc.broadcast(tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap) // Map with smallTiles(tile) being the position of the tile, giving us a unique ID.
         val borderWidth = sc.broadcast(tree.borderWidth)
@@ -58,16 +68,20 @@ object STSC {
 
         val anonymousOrdering = (vS: String) => {
             val v = DenseVector(vS.split(',').map(_.toDouble))
-            val tree = KDTree.fromCSV(treePath.value)
+            val tree = KDTree.fromString(treeString.value)
             val owningTiles = tree.owningTiles(v).map(_.toDenseVector())
-            Seq.tabulate(owningTiles.length)(i => (owningTiles(i), v))
-        }: Seq[(DenseVector[Double], DenseVector[Double])]
+            Seq.tabulate(owningTiles.length)(i => (smallTiles.value(owningTiles(i)), v))
+        }: Seq[(Int, DenseVector[Double])]
 
         val tilesAndVectors = sc.textFile(csvPath).flatMap(anonymousOrdering(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
 
-        val anonymousClustering = (tileDV: DenseVector[Double], vectors: Array[DenseVector[Double]]) => {
-            val tile = Tile(tileDV(0 until dim.value), tileDV(dim.value to -1))
-            val tileID = smallTiles.value(tileDV)
+        val anonymousClustering = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
+            var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
+            for ((t, id) <- smallTiles.value) {
+                if (tileID == id) {
+                    tile = Tile(t(0 until dim.value), t(dim.value to -1))
+                }
+            }
             val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
             for (i <- 0 until vectors.length) {
                 matrix(i, ::) := vectors(i).t
@@ -81,7 +95,7 @@ object STSC {
                 for ((ob, i) <- obs.zipWithIndex) {
                     obsAsDM(i, ::) := ob._2.t
                 }
-                val clusterCenter = sum(obsAsDM, Axis._0) :/ obs.length.toDouble
+                val clusterCenter = SparkIsNotABreeze.sumRows(obsAsDM) :/ obs.length.toDouble
                 if (tile.has(clusterCenter.t, 0)) {
                     for (ob <- obs) {
                         result += ((ob._2, tileID, cluster))
@@ -91,16 +105,18 @@ object STSC {
             result.toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
-        FileUtil.fullyDelete(new File("/tmp/result.csv"))
-        FileUtil.fullyDelete(new File(csvOutputPath))
-        tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result.csv")
-        val hadoopConfig = new Configuration()
-        val hdfs = FileSystem.get(hadoopConfig)
-        FileUtil.copyMerge(hdfs, new Path("/tmp/result.csv"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
-        FileUtil.fullyDelete(new File("/tmp/result.csv"))
+        val yo = tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3)
+        yo.saveAsTextFile(csvOutputPath)
+        // FileUtil.fullyDelete(new File("/tmp/result.csv"))
+        // FileUtil.fullyDelete(new File(csvOutputPath))
+        // tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result.csv")
+        // val hadoopConfig = new Configuration()
+        // val hdfs = FileSystem.get(hadoopConfig)
+        // FileUtil.copyMerge(hdfs, new Path("/tmp/result.csv"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+        // FileUtil.fullyDelete(new File("/tmp/result.csv"))
     }
 
-    private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
+    private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int, maxClusters: Int): (Int, SortedMap[Int, Double], Array[Int]) = {
         // Compute local scale (step 1).
         val distances = euclideanDistances(matrix)
         val scale = localScale(distances, 7) // In the original paper we use the 7th neighbor to create a local scale.
@@ -137,8 +153,8 @@ object STSC {
         }
 
         val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
-        val absoluteRotatedEigenvectors = abs(bestRotatedEigenvectors)
-        val z = argmax(absoluteRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
+        val absoluteRotatedEigenvectors = SparkIsNotABreeze.getSomeAbs(bestRotatedEigenvectors)
+        val z = argmax(bestRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
         return (cBest, orderedCosts, z)
     }
 
@@ -274,7 +290,9 @@ object STSC {
     */
     private[stsc] def j(matrix: DenseMatrix[Double]): Double = {
         val squareMatrix = matrix :* matrix
-        return sum(sum(squareMatrix(*, ::)) / max(squareMatrix(*, ::))) // Sum of the sum of each row divided by the max of each row.
+        val sumVector = SparkIsNotABreeze.sumCols(squareMatrix)
+        val maxVector = max(squareMatrix(*, ::))
+        return sum(sumVector / maxVector) // Sum of the sum of each row divided by the max of each row.
     }
 
     private[stsc] def numericalQualityGradient(matrix: DenseMatrix[Double], theta: DenseVector[Double], k: Int, h: Double): Double = {
