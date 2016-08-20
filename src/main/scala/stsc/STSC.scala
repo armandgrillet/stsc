@@ -56,7 +56,7 @@ object STSC {
         return cluster(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, csvOutputPath: String, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
+    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, csvOutputPath: String, onlyCentres: Boolean = false, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
         val tree = KDTree.fromCSV(kdTreePath)
         val treeString = sc.broadcast(tree.toString())
 
@@ -66,16 +66,16 @@ object STSC {
         val minClusters = sc.broadcast(minTileClusters)
         val maxClusters = sc.broadcast(maxTileClusters)
 
-        val anonymousOrdering = (vS: String) => {
+        val order = (vS: String) => {
             val v = DenseVector(vS.split(',').map(_.toDouble))
             val tree = KDTree.fromString(treeString.value)
             val owningTiles = tree.owningTiles(v).map(_.toDenseVector())
             Seq.tabulate(owningTiles.length)(i => (smallTiles.value(owningTiles(i)), v))
         }: Seq[(Int, DenseVector[Double])]
 
-        val tilesAndVectors = sc.textFile(csvPath).flatMap(anonymousOrdering(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
+        val tilesAndVectors = sc.textFile(csvPath).flatMap(order(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
 
-        val anonymousClustering = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
+        val clusterCentres = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
             var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
             for ((t, id) <- smallTiles.value) {
                 if (tileID == id) {
@@ -89,7 +89,8 @@ object STSC {
             val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters.value, maxClusters.value)
             val clustersAndObs = Array.tabulate(vectors.length)(i => (clusters(i), vectors(i))).groupBy(_._1)
 
-            val result = ArrayBuffer.empty[(DenseVector[Double], Int, Int)]
+            val correctCentres = ArrayBuffer.empty[DenseVector[Double]]
+
             for ((cluster, obs) <- clustersAndObs) {
                 val obsAsDM = DenseMatrix.zeros[Double](obs.length, dim.value)
                 for ((ob, i) <- obs.zipWithIndex) {
@@ -97,23 +98,66 @@ object STSC {
                 }
                 val clusterCenter = SparkIsNotABreeze.sumRows(obsAsDM) :/ obs.length.toDouble
                 if (tile.has(clusterCenter.t, 0)) {
-                    for (ob <- obs) {
-                        result += ((ob._2, tileID, cluster))
-                    }
+                    correctCentres += clusterCenter.t
+                }
+            }
+            correctCentres.toSeq
+        }: Seq[DenseVector[Double]]
+
+        val fullCluster = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
+            var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
+            for ((t, id) <- smallTiles.value) {
+                if (tileID == id) {
+                    tile = Tile(t(0 until dim.value), t(dim.value to -1))
+                }
+            }
+            val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
+            for (i <- 0 until vectors.length) {
+                matrix(i, ::) := vectors(i).t
+            }
+            val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters.value, maxClusters.value)
+            val clustersAndObs = Array.tabulate(vectors.length)(i => (clusters(i), vectors(i))).groupBy(_._1)
+
+            val result = ArrayBuffer.empty[(DenseVector[Double], Int, Int, DenseMatrix[Double])]
+
+            for ((cluster, obs) <- clustersAndObs) {
+                val obsAsDM = DenseMatrix.zeros[Double](obs.length, dim.value)
+                for ((ob, i) <- obs.zipWithIndex) {
+                    obsAsDM(i, ::) := ob._2.t
+                }
+                val clusterCenter = SparkIsNotABreeze.sumRows(obsAsDM) :/ obs.length.toDouble
+                if (tile.has(clusterCenter.t, 0)) {
+                    result += ((clusterCenter.t, cluster, tileID, obsAsDM))
                 }
             }
             result.toSeq
+        }: Seq[(DenseVector[Double], Int, Int, DenseMatrix[Double])]
+
+        val printClusterAsJSON = (clusterCenter: DenseVector[Double], clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
+            var json = "{ \"" + clusterCenter.toArray.mkString(", ") + "\": {\n"
+            // json += "\"tile\": " + tileID + "\",\n"
+            // json += "\"id\": " + clusterID + "\",\n"
+            // json += "\"observations\": [\n"
+            json
+        }: String
+
+        val flatCluster = (clusterCenter: DenseVector[Double], clusterID: Int, tileID: Int, vectors: Array[DenseVector[Double]]) => {
+            Array.tabulate(vectors.length)(i => (vectors(i), tileID, clusterID)).toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
-        val yo = tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3)
-        yo.saveAsTextFile(csvOutputPath)
-        // FileUtil.fullyDelete(new File("/tmp/result.csv"))
-        // FileUtil.fullyDelete(new File(csvOutputPath))
-        // tilesAndVectors.flatMap(tile => anonymousClustering(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result.csv")
-        // val hadoopConfig = new Configuration()
-        // val hdfs = FileSystem.get(hadoopConfig)
-        // FileUtil.copyMerge(hdfs, new Path("/tmp/result.csv"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
-        // FileUtil.fullyDelete(new File("/tmp/result.csv"))
+        FileUtil.fullyDelete(new File("/tmp/result"))
+        FileUtil.fullyDelete(new File(csvOutputPath))
+        val hadoopConfig = new Configuration()
+        val hdfs = FileSystem.get(hadoopConfig)
+        if (onlyCentres) {
+            tilesAndVectors.flatMap(tile => clusterCentres(tile._1, tile._2)).map(_.toArray.mkString(", ")).saveAsTextFile("/tmp/result")
+            FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+            FileUtil.fullyDelete(new File("/tmp/result"))
+        } else {
+            tilesAndVectors.flatMap(tile => fullCluster(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result")
+            FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+        }
+        FileUtil.fullyDelete(new File("/tmp/result"))
     }
 
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int, maxClusters: Int): (Int, SortedMap[Int, Double], Array[Int]) = {
