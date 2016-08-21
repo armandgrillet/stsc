@@ -10,7 +10,6 @@ object SparkIsNotABreeze {
         return DenseVector.tabulate(dm.rows){ i => sum(dm(i, ::))}
     }
 
-
     // Sum the rows to only have one Transpose at the end.
     def sumRows(dm: DenseMatrix[Double]): Transpose[DenseVector[Double]] = {
         return DenseVector.tabulate(dm.cols){ i => sum(dm(::, i))}.t

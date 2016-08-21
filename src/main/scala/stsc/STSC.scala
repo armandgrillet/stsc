@@ -15,7 +15,8 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
+import org.apache.hadoop.fs.{FileSystem, FileUtil, FSDataOutputStream, FileStatus, Path}
+import org.apache.hadoop.io.IOUtils
 
 import java.io.File
 
@@ -56,7 +57,7 @@ object STSC {
         return cluster(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, csvOutputPath: String, onlyCentres: Boolean = false, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
+    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, outputPath: String, onlyCentres: Boolean = false, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
         val tree = KDTree.fromCSV(kdTreePath)
         val treeString = sc.broadcast(tree.toString())
 
@@ -133,31 +134,61 @@ object STSC {
             result.toSeq
         }: Seq[(DenseVector[Double], Int, Int, DenseMatrix[Double])]
 
-        val printClusterAsJSON = (clusterCenter: DenseVector[Double], clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
-            var json = "{ \"" + clusterCenter.toArray.mkString(", ") + "\": {\n"
-            // json += "\"tile\": " + tileID + "\",\n"
-            // json += "\"id\": " + clusterID + "\",\n"
-            // json += "\"observations\": [\n"
+        val asJSON = (clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
+            var json = "\t},\n\t{\n\t\t\"id\": \"" + tileID.toString + "." + clusterID.toString + "\",\n\t\t\"obs\": [\n"
+            for (i <- 0 until vectors.rows) {
+                if (i != 0) { json += ",\n" }
+                json += "\t\t\t{ \"coord\": \"" + vectors(i, ::).t.toArray.mkString(", ") + "\" }"
+            }
+            json += "\n\t\t]"
             json
         }: String
 
-        val flatCluster = (clusterCenter: DenseVector[Double], clusterID: Int, tileID: Int, vectors: Array[DenseVector[Double]]) => {
-            Array.tabulate(vectors.length)(i => (vectors(i), tileID, clusterID)).toSeq
+        val asCSV = (clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
+            Array.tabulate(vectors.rows)(i => (vectors(i, ::).t, tileID, clusterID)).toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
-        FileUtil.fullyDelete(new File("/tmp/result"))
-        FileUtil.fullyDelete(new File(csvOutputPath))
         val hadoopConfig = new Configuration()
         val hdfs = FileSystem.get(hadoopConfig)
         if (onlyCentres) {
+            FileUtil.fullyDelete(new File("/tmp/result"))
+            FileUtil.fullyDelete(new File(outputPath))
             tilesAndVectors.flatMap(tile => clusterCentres(tile._1, tile._2)).map(_.toArray.mkString(", ")).saveAsTextFile("/tmp/result")
-            FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+            FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(outputPath), false, hadoopConfig, null)
             FileUtil.fullyDelete(new File("/tmp/result"))
         } else {
-            tilesAndVectors.flatMap(tile => fullCluster(tile._1, tile._2)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/result")
-            FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(csvOutputPath), false, hadoopConfig, null)
+            FileUtil.fullyDelete(new File("/tmp/resultCSV"))
+            FileUtil.fullyDelete(new File(outputPath + ".csv"))
+            FileUtil.fullyDelete(new File(outputPath + ".json"))
+            val clusters = tilesAndVectors.flatMap(tile => fullCluster(tile._1, tile._2))
+            clusters.flatMap(cluster => asCSV(cluster._2, cluster._3, cluster._4)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/resultCSV")
+            FileUtil.copyMerge(hdfs, new Path("/tmp/resultCSV"), hdfs, new Path(outputPath + ".csv"), false, hadoopConfig, null)
+            FileUtil.fullyDelete(new File("/tmp/resultCSV"))
+
+            FileUtil.fullyDelete(new File("/tmp/resultJSON"))
+            clusters.map(cluster => asJSON(cluster._2, cluster._3, cluster._4)).saveAsTextFile("/tmp/resultJSON")
+            val out = hdfs.create(new Path(outputPath + ".json"))
+            out.write(("[\n").getBytes("UTF-8"))
+
+            try {
+                val folder = hdfs.listStatus(new Path("/tmp/resultJSON"))
+                for (i <- 1 until folder.length) { // folder(0) is a useless file.
+                    val in = hdfs.open(folder(i).getPath())
+                    if (i == 1) {
+                        in.skip(("\t},\n").getBytes("UTF-8").length)
+                    }
+                    try {
+                        IOUtils.copyBytes(in, out, hadoopConfig, false)
+                    } finally {
+                        in.close()
+                    }
+                }
+                out.write(("\t}\n]").getBytes("UTF-8"))
+            } finally {
+                out.close()
+            }
+            FileUtil.fullyDelete(new File("/tmp/resultJSON"))
         }
-        FileUtil.fullyDelete(new File("/tmp/result"))
     }
 
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int, maxClusters: Int): (Int, SortedMap[Int, Double], Array[Int]) = {
