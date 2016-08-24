@@ -9,7 +9,6 @@ import scala.collection.immutable.SortedMap
 import scala.collection.mutable.{ArrayBuffer, Map}
 import scala.io.Source
 import scala.math.exp
-import scala.util.control.Breaks.{break, breakable}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -229,7 +228,7 @@ object STSC {
 
         val orderedCosts = SortedMap(costs.toSeq:_*) // Order the costs.
         val absoluteRotatedEigenvectors = SparkIsNotABreeze.getSomeAbs(bestRotatedEigenvectors)
-        val z = argmax(bestRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
+        val z = argmax(absoluteRotatedEigenvectors(*, ::)).toArray // The alignment result (step 8), conversion to array due to https://issues.scala-lang.org/browse/SI-9578
         return (cBest, orderedCosts, z)
     }
 
@@ -319,39 +318,30 @@ object STSC {
     * @return the cost of the best rotation and the rotation as a DenseMatrix.
     */
     private[stsc] def bestRotation(eigenvectors: DenseMatrix[Double]): (Double, DenseMatrix[Double]) = {
-        var nablaJ, cost = 0.0 // Variables used to recover the aligning rotation.
-        var newCost, old1Cost, old2Cost = 0.0 // Variables to compute the descend through true derivative.
+        var i = 0
+        var nablaJ, newCost = 0.0
+        var cost, old1Cost, old2Cost = j(eigenvectors)
 
         val bigK = eigenvectors.cols * (eigenvectors.cols - 1) / 2
         var theta, thetaNew = DenseVector.zeros[Double](bigK)
 
-        cost = j(eigenvectors)
-        old1Cost = cost
-        old2Cost = cost
+        while (i <= 2 || (old2Cost - cost) >= (0.0001 * old2Cost)) { // Max iterations = 200, as in the original paper code.
+            for (k <- 0 until theta.length) { // kth entry in the list composed of the (i, j) indexes
+                val alpha = 0.001
+                nablaJ = numericalQualityGradient(eigenvectors, theta, k, alpha)
+                thetaNew(k) = theta(k) - alpha * nablaJ
+                newCost = j(givensRotation(eigenvectors, thetaNew))
 
-        breakable {
-            for (i <- 0 until 200) { // Max iterations = 200, as in the original paper code.
-                for (k <- 0 until theta.length) { // kth entry in the list composed of the (i, j) indexes
-                    val alpha = 0.001
-                    nablaJ = numericalQualityGradient(eigenvectors, theta, k, alpha)
-                    thetaNew(k) = theta(k) - alpha * nablaJ
-                    newCost = j(givensRotation(eigenvectors, thetaNew))
-
-                    if (newCost < cost) {
-                        theta(k) = thetaNew(k)
-                        cost = newCost
-                    } else {
-                        thetaNew(k) = theta(k)
-                    }
+                if (newCost < cost) {
+                    theta(k) = thetaNew(k)
+                    cost = newCost
+                } else {
+                    thetaNew(k) = theta(k)
                 }
-
-                // If the new cost is not that better, we end the rotation.
-                if (i > 2 && (old2Cost - cost) < (0.0001 * old2Cost)) {
-                    break
-                }
-                old2Cost = old1Cost
-                old1Cost = cost
             }
+            old2Cost = old1Cost
+            old1Cost = cost
+            i += 1
         }
 
         val rotatedEigenvectors = givensRotation(eigenvectors, thetaNew) // The rotation using the "best" theta we found.
