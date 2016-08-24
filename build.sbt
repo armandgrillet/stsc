@@ -7,7 +7,7 @@ scalaVersion := "2.11.8"
 
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
 
-mainClass in Compile := Some("stsc.Spark")
+mainClass in Compile := Some("stsc.Job")
 
 libraryDependencies  ++= Seq(
     // Breeze.
@@ -36,5 +36,6 @@ mergeStrategy in assembly <<= (mergeStrategy in assembly) { (old) =>
 }
 test in assembly := {}
 
+// Tests
 testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework")
 logBuffered := false
