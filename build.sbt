@@ -5,14 +5,12 @@ version := "1.0"
 
 scalaVersion := "2.11.8"
 
-resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
-
 mainClass in Compile := Some("stsc.Job")
 
 libraryDependencies  ++= Seq(
     // Breeze.
-    "org.scalanlp" %% "breeze" % "0.12" % "provided",
-    "org.scalanlp" %% "breeze-natives" % "0.12" % "provided",
+    "org.scalanlp" %% "breeze" % "0.12",
+    "org.scalanlp" %% "breeze-natives" % "0.12",
     // The unit test library.
     "org.scalactic" %% "scalactic" % "2.2.6",
     "org.scalatest" %% "scalatest" % "2.2.6" % "test",
