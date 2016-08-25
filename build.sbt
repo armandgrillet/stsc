@@ -7,6 +7,8 @@ scalaVersion := "2.11.8"
 
 mainClass in Compile := Some("stsc.Job")
 
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases" // For Scalameter
+
 libraryDependencies  ++= Seq(
     // Breeze.
     "org.scalanlp" %% "breeze" % "0.12",
