@@ -207,8 +207,11 @@ object STSC {
 
         var cBest = minClusters // The best group number.
         var currentEigenvectors = largestEigenvectors(::, 0 until minClusters) // We only take the eigenvectors needed for the number of clusters.
+        val tzero = System.nanoTime()
         var (cost, rotatedEigenvectors) = bestRotation(currentEigenvectors)
-        println("2: " + cost)
+        val tone = System.nanoTime()
+        println("Elapsed time: " + (tone - tzero) / 1000000000 + "s")
+        println(minClusters.toString + ": " + cost)
         var costs = Map(minClusters -> cost) // List of the costs.
         var bestRotatedEigenvectors = rotatedEigenvectors // The matrix of rotated eigenvectors having the minimal cost.
 
