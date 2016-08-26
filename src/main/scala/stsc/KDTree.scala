@@ -162,16 +162,16 @@ object KDTree {
     /** Initialize a k-d tree with a given maximum number of tiles in the k-d tree.
     *
     * @param dataset the dataset to use to create the k-d tree.
-    * @param nodesNumber the number of nodes in the k-d tree.
+    * @param leafsNumer the number of leafs in the k-d tree.
     * @param tileBorderWidth the border width of the tiles in the k-d tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
     * @return the k-d tree.
     */
-    def createWithTilesNumber(dataset: DenseMatrix[Double], nodesNumber: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
+    def createWithTilesNumber(dataset: DenseMatrix[Double], leafs: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
-        if (nodesNumber < 1) { throw new IndexOutOfBoundsException("The number of tiles must be positive.") }
-        if (nodesNumber > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
-        val maxObservations = math.ceil(dataset.rows / nodesNumber).toInt
+        if (leafs < 1) { throw new IndexOutOfBoundsException("The number of tiles must be positive.") }
+        if (leafs > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
+        val maxObservations = math.ceil(dataset.rows / leafs).toInt
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
         val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
         return new KDTree(tilesTree, tileBorderWidth)

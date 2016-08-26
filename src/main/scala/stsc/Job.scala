@@ -13,7 +13,7 @@ object Job {
 
         val dataPath = getClass.getResource("/dataset.csv").getPath()
         val t0 = System.nanoTime()
-        val (bestK, clustersQualities, correctClusters) = STSC.clusterCSV(dataPath, 5, 20)
+        val (bestK, clustersQualities, correctClusters) = STSC.clusterCSV(dataPath, 40, 60)
         val t1 = System.nanoTime()
         println("Elapsed time: " + (t1 - t0) / 1000000000 + "s")
         println(bestK)

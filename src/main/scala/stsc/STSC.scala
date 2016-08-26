@@ -215,7 +215,10 @@ object STSC {
         for (k <- minClusters until maxClusters) { // We get the cost of stsc for each possible number of clusters.
             val eigenvectorToAdd = largestEigenvectors(::, k).toDenseMatrix.t // One new eigenvector at each turn.
             currentEigenvectors = DenseMatrix.horzcat(rotatedEigenvectors, eigenvectorToAdd) // We add it to the already rotated eigenvectors.
+            val t0 = System.nanoTime()
             val (tempCost, tempRotatedEigenvectors) = bestRotation(currentEigenvectors)
+            val t1 = System.nanoTime()
+            println("Elapsed time: " + (t1 - t0) / 1000000000 + "s")
             println((k + 1).toString + ": " + tempCost)
             costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
