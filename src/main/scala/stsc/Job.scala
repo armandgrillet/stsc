@@ -6,7 +6,7 @@ import org.apache.spark.SparkConf
 object Job {
     def main(args: Array[String]) {
         val t0 = System.nanoTime()
-        val conf = new SparkConf().setAppName("STSCSparkJob").setMaster("spark://main:7077")
+        val conf = new SparkConf().setAppName("STSCSparkJob").setMaster("spark://Mac:7077")
         val sc = new SparkContext(conf)
         val dataset = getClass.getResource("/dataset.csv").getPath()
         val kdtree = getClass.getResource("/kdtree.csv").getPath()

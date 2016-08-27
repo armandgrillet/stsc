@@ -8,7 +8,7 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class KDTreeTest extends FlatSpec with Matchers {
     "The k-d tree" should "work with tt0" in {
-        val dataPath = getClass.getResource("/tt0.csv").getPath()
+        val dataPath = getClass.getResource("/datasetforkdt0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val tree = KDTree.createWithMaxObservations(matrix, 110, 0, KDTree.cutUsingContentDistances)
@@ -23,12 +23,12 @@ class KDTreeTest extends FlatSpec with Matchers {
     }
 
     "The k-d tree" should "be saved and loaded" in {
-        val dataPath = getClass.getResource("/tt0.csv").getPath()
+        val dataPath = getClass.getResource("/datasetforkdt0.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val tree = KDTree.createWithMaxObservations(matrix, 110, 0, KDTree.cutUsingContentDistances)
         tree.toCSV("ttfortt0.csv")
-        val loadedTree = KDTree.fromCSV("ttfortt0.csv")
+        val loadedTree = KDTree.fromCSV(getClass.getResource("/kdt0.csv").getPath())
         tree.dimensions should be (loadedTree.dimensions)
         tree.tiles should be (loadedTree.tiles)
         new File("ttfortt0.csv").delete()
@@ -41,7 +41,7 @@ class KDTreeTest extends FlatSpec with Matchers {
         // println(tree.tiles.right.value)
     }
 
-    "The k-d tree" should "work with a simple dataset when clustering with tiles numbers" in {
+    "The k-d tree" should "work with a large dataset" in {
         val dataPath = getClass.getResource("/dataset.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
@@ -49,6 +49,21 @@ class KDTreeTest extends FlatSpec with Matchers {
         val tree = KDTree.createWithTilesNumber(matrix, 8, 0, KDTree.cutUsingTileDimensions)
         val t1 = System.nanoTime()
         println("Elapsed time: " + (t1 - t0) + "ns")
-        println(tree.toString())
+        // println(tree.toString())
+    }
+
+    "The k-d tree owning tiles" should "be correct" in {
+        val tree = KDTree.fromCSV(getClass.getResource("/kdtree.csv").getPath())
+        val map = tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap
+        val dataPath = getClass.getResource("/dataset.csv").getPath()
+        val dataset = new File(dataPath)
+        val matrix = breeze.linalg.csvread(dataset)
+        val firstRow = matrix(0, ::).t
+        println(map)
+        println(firstRow)
+        val owningTile = tree.owningTiles(firstRow).map(_.toDenseVector())
+        println(owningTile(0))
+        val smallTiles = tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap
+        println(smallTiles(owningTile(0)))
     }
 }

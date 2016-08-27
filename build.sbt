@@ -19,7 +19,7 @@ libraryDependencies  ++= Seq(
     // Benchmarks
     "com.storm-enroute" %% "scalameter" % "0.7",
     // Spark
-    "org.apache.spark" %% "spark-core" % "2.0.0" % "provided",
+    "org.apache.spark" %% "spark-core" % "2.0.0",
     // Hadoop HDFS to merge the results.
     "org.apache.hadoop" % "hadoop-client" % "2.6.4",
     "org.apache.hadoop" % "hadoop-hdfs" % "2.6.4"

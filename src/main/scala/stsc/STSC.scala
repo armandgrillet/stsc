@@ -61,7 +61,8 @@ object STSC {
         val tree = KDTree.fromCSV(kdTreePath)
         val treeString = sc.broadcast(tree.toString())
 
-        val smallTiles = sc.broadcast(tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap) // Map with smallTiles(tile) being the position of the tile, giving us a unique ID.
+        val smallTilesString = sc.broadcast(tree.smallTiles.map(_.toString()).zipWithIndex.toMap) // Map with smallTiles(tile) being the position of the tile, giving us a unique ID.
+        val smallTiles = sc.broadcast(tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap)
         val borderWidth = sc.broadcast(tree.borderWidth)
         val dim = sc.broadcast(tree.dimensions)
         val minClusters = sc.broadcast(minTileClusters)
@@ -70,8 +71,8 @@ object STSC {
         val order = (vS: String) => {
             val v = DenseVector(vS.split(',').map(_.toDouble))
             val tree = KDTree.fromString(treeString.value)
-            val owningTiles = tree.owningTiles(v).map(_.toDenseVector())
-            Seq.tabulate(owningTiles.length)(i => (smallTiles.value(owningTiles(i)), v))
+            val owningTiles = tree.owningTiles(v).map(_.toString())
+            Seq.tabulate(owningTiles.length)(i => (smallTilesString.value(owningTiles(i)), v))
         }: Seq[(Int, DenseVector[Double])]
 
         val tilesAndVectors = sc.textFile(csvPath).flatMap(order(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
