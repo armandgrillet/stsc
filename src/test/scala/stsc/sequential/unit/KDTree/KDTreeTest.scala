@@ -34,15 +34,21 @@ class KDTreeTest extends FlatSpec with Matchers {
         new File("ttfortt0.csv").delete()
     }
 
-    "The k-d tree" should "work with a very simple dataset" in {
+    "The k-d tree" should "work with a very simple dataset when clustering with max observations" in {
         val matrix = DenseMatrix((1.0, 3.0), (2.0, 3.0), (3.0, 3.0), (4.0, 3.0), (5.0, 3.0), (3.0, 1.0), (4.0, 1.0), (5.0, 1.0), (6.0, 1.0), (7.0, 1.0))
         val tree = KDTree.createWithMaxObservations(matrix, 5, 0, KDTree.cutUsingTileDimensions)
-        println(tree.tiles.left.value)
-        println(tree.tiles.right.value)
+        // println(tree.tiles.left.value)
+        // println(tree.tiles.right.value)
     }
 
-    "The k-d tree" should "work with a simple dataset" in {
-        val matrix = DenseMatrix((0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (6.0, 4.0), (14.0, 8.0), (16.0, 8.0), (14.0, 15.0), (16.0, 15.0))
-        val tree = KDTree.createWithMaxObservations(matrix, 2, 0, KDTree.cutUsingTileDimensions)
+    "The k-d tree" should "work with a simple dataset when clustering with tiles numbers" in {
+        val dataPath = getClass.getResource("/dataset.csv").getPath()
+        val dataset = new File(dataPath)
+        val matrix = breeze.linalg.csvread(dataset)
+        val t0 = System.nanoTime()
+        val tree = KDTree.createWithTilesNumber(matrix, 8, 0, KDTree.cutUsingTileDimensions)
+        val t1 = System.nanoTime()
+        println("Elapsed time: " + (t1 - t0) + "ns")
+        println(tree.toString())
     }
 }
