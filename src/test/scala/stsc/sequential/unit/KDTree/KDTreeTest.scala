@@ -70,6 +70,7 @@ class KDTreeTest extends FlatSpec with Matchers {
         val tree = KDTree.createWithMaxObservations(matrix, 1000, 0, KDTree.cutUsingTileDimensions)
         val t1 = System.nanoTime()
         println("Elapsed time: " + (t1 - t0) + "ns")
+        tree.toCSV("./kdt1000.csv")
     }
 
     "The k-d tree" should "work with a large dataset (10000 clusters of 100 obs)" in {
@@ -80,6 +81,5 @@ class KDTreeTest extends FlatSpec with Matchers {
         val tree = KDTree.createWithMaxObservations(matrix, 1000, 0, KDTree.cutUsingTileDimensions)
         val t1 = System.nanoTime()
         println("Elapsed time: " + (t1 - t0) + "ns")
-        tree.toCSV("./kdt10000.csv")
     }
 }
