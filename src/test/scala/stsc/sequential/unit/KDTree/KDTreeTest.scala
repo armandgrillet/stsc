@@ -41,7 +41,7 @@ class KDTreeTest extends FlatSpec with Matchers {
         // println(tree.tiles.right.value)
     }
 
-    "The k-d tree" should "work with a large dataset" in {
+    "The k-d tree" should "work with a large dataset (36 clusters of 100 obs)" in {
         val dataPath = getClass.getResource("/dataset.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
@@ -52,18 +52,34 @@ class KDTreeTest extends FlatSpec with Matchers {
         // println(tree.toString())
     }
 
-    "The k-d tree owning tiles" should "be correct" in {
-        val tree = KDTree.fromCSV(getClass.getResource("/kdtree.csv").getPath())
-        val map = tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap
-        val dataPath = getClass.getResource("/dataset.csv").getPath()
+    "The k-d tree" should "work with a large dataset (100 clusters of 100 obs)" in {
+        val dataPath = getClass.getResource("/dataset100.csv").getPath()
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
-        val firstRow = matrix(0, ::).t
-        println(map)
-        println(firstRow)
-        val owningTile = tree.owningTiles(firstRow).map(_.toDenseVector())
-        println(owningTile(0))
-        val smallTiles = tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap
-        println(smallTiles(owningTile(0)))
+        val t0 = System.nanoTime()
+        val tree = KDTree.createWithMaxObservations(matrix, 1000, 0, KDTree.cutUsingTileDimensions)
+        val t1 = System.nanoTime()
+        println("Elapsed time: " + (t1 - t0) + "ns")
+    }
+
+    "The k-d tree" should "work with a large dataset (1000 clusters of 100 obs)" in {
+        val dataPath = getClass.getResource("/dataset1000.csv").getPath()
+        val dataset = new File(dataPath)
+        val matrix = breeze.linalg.csvread(dataset)
+        val t0 = System.nanoTime()
+        val tree = KDTree.createWithMaxObservations(matrix, 1000, 0, KDTree.cutUsingTileDimensions)
+        val t1 = System.nanoTime()
+        println("Elapsed time: " + (t1 - t0) + "ns")
+    }
+
+    "The k-d tree" should "work with a large dataset (10000 clusters of 100 obs)" in {
+        val dataPath = getClass.getResource("/dataset10000.csv").getPath()
+        val dataset = new File(dataPath)
+        val matrix = breeze.linalg.csvread(dataset)
+        val t0 = System.nanoTime()
+        val tree = KDTree.createWithMaxObservations(matrix, 1000, 0, KDTree.cutUsingTileDimensions)
+        val t1 = System.nanoTime()
+        println("Elapsed time: " + (t1 - t0) + "ns")
+        tree.toCSV("./kdt10000.csv")
     }
 }

@@ -6,11 +6,11 @@ import org.apache.spark.SparkConf
 object Job {
     def main(args: Array[String]) {
         val t0 = System.nanoTime()
-        val conf = new SparkConf().setAppName("STSCSparkJob").setMaster("spark://Mac:7077")
+        val conf = new SparkConf().setAppName("STSCSparkJob").setMaster("spark://main:7077")
         val sc = new SparkContext(conf)
-        val dataset = getClass.getResource("/dataset.csv").getPath()
-        val kdtree = getClass.getResource("/kdtree.csv").getPath()
-        sc.addJar("/Users/Armand/Code/stsc/target/scala-2.11/stsc-assembly-1.0.jar")
+        val dataset = getClass.getResource("/dataset10000.csv").getPath()
+        val kdtree = getClass.getResource("/kdt10000.csv").getPath()
+        sc.addJar("/home/Armand/stsc/target/scala-2.11/stsc-assembly-1.0.jar")
         // STSC.sparkCluster(sc, dataset, kdtree, "clusters")
         STSC.sparkCluster(sc, dataset, kdtree, "clusterCenters.csv", true, 2, 12)
         val t1 = System.nanoTime()
