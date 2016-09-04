@@ -7,19 +7,19 @@ import breeze.stats.median
 import java.io.File
 import scala.collection.mutable.ArrayBuffer
 
-/** A k-d tree to divide a daset into multiple tiles.
+/** A kd tree to divide a dataset into multiple tiles.
 *
-* @constructor create a new k-d tree containing a list of Tiles and a dimension.
-* @param tiles the tiles in the k-d tree, represented as a binary tree
-* @param borderWidth the bordel of each tile that will be used to know where is an observation
+* @constructor create a new kd tree containing a list of tiles and a border-width.
+* @param tiles the tiles in the kd tree, represented as a binary tree.
+* @param borderWidth the border of each tile that is used to know in which tile(s) is an observation.
 */
-class KDTree(val tiles: Node, val borderWidth: Double) {
+class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
     require(borderWidth >= 0)
 
-    val dimensions = tiles.value.mins.length
+    val dimensions = tiles.value.mins.length // The dimensionality of the kd tree.
 
-    def smallTiles(): Array[Tile] = {
-        val leafs = Array.fill[Tile](tiles.leafs)(Tile(DenseVector.zeros[Double](1), DenseVector.zeros[Double](1)))
+    def leafs: Array[Tile] = {
+        val leafs = Array.fill[Tile](tiles.leafs)(Tile(DenseVector(0.0), DenseVector(0.0)))
         var count = 0
         def leafsHelper(tree: Node) {
             if (tree.isLeaf) {
@@ -30,40 +30,21 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
                 leafsHelper(tree.right)
             }
         }
+
         leafsHelper(tiles)
         return leafs
     }
 
-    /* Returns a densematrix containing all the leafs of the tree. */
-    def smallTilesAsDenseMatrix(): DenseMatrix[Double] = {
-        val leafsDenseMatrix = DenseMatrix.zeros[Double](tiles.leafs, dimensions * 2)
-        var count = 0
-        def asDenseMatrixHelper(tree: Node) {
-            if (tree.isLeaf) {
-                leafsDenseMatrix(count, ::) := tree.value.asTranspose()
-                count += 1
-            } else {
-                asDenseMatrixHelper(tree.left)
-                asDenseMatrixHelper(tree.right)
-            }
-        }
-        asDenseMatrixHelper(tiles)
-
-        return leafsDenseMatrix
-    }
-
-    /** Write the k-d tree as a CSV file.
+    /** Write the kd tree as a CSV file.
     *
-    * @param filePath the path where the k-d tree has to be written.
+    * @param filePath the path where the kd tree has to be written.
     */
-    def toCSV(filePath: String) = {
-        var tilesDenseMatrix = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
-        tilesDenseMatrix(0, 0) = borderWidth
-
-        val tilesDenseVector = Array.fill(tiles.length){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
+    def toCSV(path: String) = {
+        var tilesDM = DenseMatrix.zeros[Double](tiles.length + 1, dimensions * 2)
+        tilesDM(0, 0) = borderWidth
 
         def toCSVHelper(tree: Node, position: Int) {
-            tilesDenseVector(position) = tree.value
+            tilesDM(position + 1, ::) := tree.value.toTranspose // +1 because the 1st row is for the border width.
             if (!tree.isLeaf) {
                 toCSVHelper(tree.left, 2 * position + 1)
                 toCSVHelper(tree.right, 2 * position + 2)
@@ -71,24 +52,21 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
         }
         toCSVHelper(tiles, 0)
 
-        for (i <- 0 until tiles.length) {
-            tilesDenseMatrix(i + 1, ::) := tilesDenseVector(i).asTranspose()
-        }
-
-        csvwrite(new File(filePath), tilesDenseMatrix, separator = ',')
+        csvwrite(new File(path), tilesDM, separator = ',')
     }
 
+    /* Returns the kd tree as a String, useful for debugging. */
     override def toString(): String = {
         val tilesArray = Array.fill[String](tiles.length)("")
 
-        def toCSVHelper(tree: Node, position: Int) {
-            tilesArray(position) = tree.value.toString()
+        def toStringHelper(tree: Node, position: Int) {
+            tilesArray(position) = tree.value.toString
             if (!tree.isLeaf) {
-                toCSVHelper(tree.left, 2 * position + 1)
-                toCSVHelper(tree.right, 2 * position + 2)
+                toStringHelper(tree.left, 2 * position + 1)
+                toStringHelper(tree.right, 2 * position + 2)
             }
         }
-        toCSVHelper(tiles, 0)
+        toStringHelper(tiles, 0)
 
         return borderWidth.toString + "," +  Array.fill[String](dimensions * 2 - 1)("0.0").mkString(",") + "\n" + tilesArray.mkString("\n")
     }
@@ -96,21 +74,21 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
     /** Returns the tile(s) owning a given observation.
     *
     * @param observation the observation to check, represented as a DenseVector where every value is the coordinates in a dimension.
-    * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
+    * @return an array of the tiles having the observation. There can be more than one tile due to the border width.
     */
     def owningTiles(observation: DenseVector[Double]): Array[Tile] = {
         var owningTiles = ArrayBuffer.empty[Tile]
 
-        def owningTilesHelper(Node: Node) {
+        def owningTilesHelper(tree: Node) {
             if (Node.isLeaf) {
-                owningTiles += Node.value
+                owningTiles += tree.value
             } else {
                 // The observation can be in multiple tiles thus we test for the left and the right tile.
-                if (Node.left.value.has(observation, borderWidth)) {
-                    owningTilesHelper(Node.left)
+                if (tree.left.value.has(observation, borderWidth)) {
+                    owningTilesHelper(tree.left)
                 }
-                if (Node.right.value.has(observation, borderWidth)) {
-                    owningTilesHelper(Node.right)
+                if (tree.right.value.has(observation, borderWidth)) {
+                    owningTilesHelper(tree.right)
                 }
             }
         }
@@ -122,7 +100,7 @@ class KDTree(val tiles: Node, val borderWidth: Double) {
     /** Returns the tile owning a given observation, must be within the strict edges of the tile.
     *
     * @param observation the observation to check, represented as a DenseVector where every value is the coordinates in a dimension.
-    * @return a list of the tiles having the observation. There can be more than one tile due to the border width.
+    * @return the tile owning the observation.
     */
     def owningTile(observation: DenseVector[Double]): Tile = {
         def owningTileHelper(Node: Node): Tile = {

@@ -61,8 +61,8 @@ object STSC {
         val tree = KDTree.fromCSV(kdTreePath)
         val treeString = sc.broadcast(tree.toString())
 
-        val smallTilesString = sc.broadcast(tree.smallTiles.map(_.toString()).zipWithIndex.toMap) // Map with smallTiles(tile) being the position of the tile, giving us a unique ID.
-        val smallTiles = sc.broadcast(tree.smallTiles.map(_.toDenseVector()).zipWithIndex.toMap)
+        val leafsString = sc.broadcast(tree.leafs.map(_.toString()).zipWithIndex.toMap) // Map with leafs(tile) being the position of the tile, giving us a unique ID.
+        val leafs = sc.broadcast(tree.leafs.map(_.toDenseVector()).zipWithIndex.toMap)
         val borderWidth = sc.broadcast(tree.borderWidth)
         val dim = sc.broadcast(tree.dimensions)
         val minClusters = sc.broadcast(minTileClusters)
@@ -72,14 +72,14 @@ object STSC {
             val v = DenseVector(vS.split(',').map(_.toDouble))
             val tree = KDTree.fromString(treeString.value)
             val owningTiles = tree.owningTiles(v).map(_.toString())
-            Seq.tabulate(owningTiles.length)(i => (smallTilesString.value(owningTiles(i)), v))
+            Seq.tabulate(owningTiles.length)(i => (leafsString.value(owningTiles(i)), v))
         }: Seq[(Int, DenseVector[Double])]
 
         val tilesAndVectors = sc.textFile(csvPath).flatMap(order(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
 
         val clusterCentres = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
             var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
-            for ((t, id) <- smallTiles.value) {
+            for ((t, id) <- leafs.value) {
                 if (tileID == id) {
                     tile = Tile(t(0 until dim.value), t(dim.value to -1))
                 }
@@ -108,7 +108,7 @@ object STSC {
 
         val fullCluster = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
             var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
-            for ((t, id) <- smallTiles.value) {
+            for ((t, id) <- leafs.value) {
                 if (tileID == id) {
                     tile = Tile(t(0 until dim.value), t(dim.value to -1))
                 }

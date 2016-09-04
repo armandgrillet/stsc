@@ -63,7 +63,7 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
     }
 
     /** @return the tile as a Transpose with all the minimums then all the maximums. */
-    def asTranspose(): Transpose[DenseVector[Double]] = {
+    def toTranspose(): Transpose[DenseVector[Double]] = {
         return DenseVector.vertcat(mins, maxs).t
     }
 
