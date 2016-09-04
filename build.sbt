@@ -5,8 +5,6 @@ version := "1.0"
 
 scalaVersion := "2.11.8"
 
-mainClass in Compile := Some("stsc.Job")
-
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases" // For Scalameter
 
 libraryDependencies  ++= Seq(
