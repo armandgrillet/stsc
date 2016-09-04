@@ -18,6 +18,7 @@ class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
 
     val dimensions = tiles.value.mins.length // The dimensionality of the kd tree.
 
+    /* Returns the leafs of kd tree as an array. */
     def leafs: Array[Tile] = {
         val leafs = Array.fill[Tile](tiles.leafs)(Tile(DenseVector(0.0), DenseVector(0.0)))
         var count = 0
@@ -56,7 +57,7 @@ class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
     }
 
     /* Returns the kd tree as a String, useful for debugging. */
-    override def toString(): String = {
+    override def toString: String = {
         val tilesArray = Array.fill[String](tiles.length)("")
 
         def toStringHelper(tree: Node, position: Int) {
@@ -80,7 +81,7 @@ class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
         var owningTiles = ArrayBuffer.empty[Tile]
 
         def owningTilesHelper(tree: Node) {
-            if (Node.isLeaf) {
+            if (tree.isLeaf) {
                 owningTiles += tree.value
             } else {
                 // The observation can be in multiple tiles thus we test for the left and the right tile.
@@ -103,14 +104,14 @@ class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
     * @return the tile owning the observation.
     */
     def owningTile(observation: DenseVector[Double]): Tile = {
-        def owningTileHelper(Node: Node): Tile = {
-            if (Node.isLeaf) {
-                return Node.value
+        def owningTileHelper(tree: Node): Tile = {
+            if (tree.isLeaf) {
+                return tree.value
             } else {
-                if (Node.left.value.has(observation, 0)) {
-                    return owningTileHelper(Node.left)
+                if (tree.left.value.has(observation, 0)) {
+                    return owningTileHelper(tree.left)
                 } else {
-                    return owningTileHelper(Node.right)
+                    return owningTileHelper(tree.right)
                 }
             }
         }
@@ -121,31 +122,31 @@ class KDTree(val tiles: Node, val borderWidth: Double = 0.0) {
 
 /** Factory for gr.armand.stsc.KDTree instances. */
 object KDTree {
-    /** Initialize a k-d tree with a given maximum number of observations per tile.
+    /** Initialize a kd tree with a given maximum number of observations per tile.
     *
-    * @param dataset the dataset to use to create the k-d tree.
-    * @param maxObservations the maximum number of observations per tile.
-    * @param tileBorderWidth the border width of the tiles in the k-d tree.
+    * @param dataset the dataset to use to create the kd tree.
+    * @param tileMaxObservations the maximum number of observations per tile.
+    * @param tileBorderWidth the border width of the tiles in the kd tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
-    * @return the k-d tree.
+    * @return the kd tree.
     */
-    def createWithMaxObservations(dataset: DenseMatrix[Double], maxObservations: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
+    def createWithMaxObservations(dataset: DenseMatrix[Double], tileMaxObservations: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
-        if (maxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
+        if (tileMaxObservations > dataset.rows) { throw new IndexOutOfBoundsException("The maximum number of observations in a tile must be less than the number of observations.") }
         val firstTile = Tile(DenseVector.fill(dataset.cols){scala.Double.NegativeInfinity}, DenseVector.fill(dataset.cols){scala.Double.PositiveInfinity})
-        val tilesTree = cutWithMaxObservations(dataset, firstTile, maxObservations, cutFunction)
+        val tilesTree = cutWithMaxObservations(dataset, firstTile, tileMaxObservations, cutFunction)
         return new KDTree(tilesTree, tileBorderWidth)
     }
 
-    /** Initialize a k-d tree with a given maximum number of tiles in the k-d tree.
+    /** Initialize a kd tree with a given maximum number of tiles in the kd tree.
     *
-    * @param dataset the dataset to use to create the k-d tree.
-    * @param leafsNumer the number of leafs in the k-d tree.
-    * @param tileBorderWidth the border width of the tiles in the k-d tree.
+    * @param dataset the dataset to use to create the kd tree.
+    * @param leafsNumer the number of leafs in the kd tree.
+    * @param tileBorderWidth the border width of the tiles in the kd tree.
     * @param cutFunction the function used to cut a tile in two. The default is to cut the tiles using the parent tile dimensions.
-    * @return the k-d tree.
+    * @return the kd tree.
     */
-    def createWithTilesNumber(dataset: DenseMatrix[Double], leafs: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
+    def createWithLeafsNumber(dataset: DenseMatrix[Double], leafs: Int, tileBorderWidth: Double = 0, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile) = cutUsingTileDimensions): KDTree = {
         if (tileBorderWidth < 0) { throw new IndexOutOfBoundsException("Tile radius must be a positive number. It was " + tileBorderWidth + ".") }
         if (leafs < 1) { throw new IndexOutOfBoundsException("The number of tiles must be positive.") }
         if (leafs > dataset.rows) { throw new IndexOutOfBoundsException("The number of tiles must be less than the number of observations.") }
@@ -155,34 +156,39 @@ object KDTree {
         return new KDTree(tilesTree, tileBorderWidth)
     }
 
-    /** Initialize a k-d tree using a given CSV. The CSV must have a specific structure created by toCSV().
+    /** Initialize a kd tree using a given CSV. The CSV must have a specific structure created by toCSV().
     *
-    * @param filePath the path of the CSV file containing the k-d tree.
-    * @return the k-d tree.
+    * @param filePath the path of the CSV file containing the kd tree.
+    * @return the kd tree.
     */
     def fromCSV(filePath: String): KDTree = {
         return fromMatrix(csvread(new File(filePath)))
     }
 
-    /** Initialize a k-d tree using a given String. The String must have a specific structure created by toCSV().
+    /** Initialize a kd tree using a given String. The String must have a specific structure created by toCSV().
     *
-    * @param text the string representing the k-d tree.
-    * @return the k-d tree.
+    * @param text the string representing the kd tree.
+    * @return the kd tree.
     */
     def fromString(text: String): KDTree = {
         val textArr = text.split("\n").map(l => l.split(","))
         return fromMatrix(DenseMatrix.tabulate(textArr.length,textArr.head.length)((i,j) => textArr(i)(j).toDouble))
     }
 
-    private[stsc] def fromMatrix(tilesDenseMatrix: DenseMatrix[Double]): KDTree = {
-        if (tilesDenseMatrix.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
-        if (tilesDenseMatrix(0, 0) != sum(tilesDenseMatrix(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a k-d tree.") }
+    /** Initialize a kd tree using a given Matrix. The matrix must have a firts row corresponding to its border width.
+    *
+    * @param tilesDM the matrix representing the kd tree.
+    * @return the kd tree.
+    */
+    private[stsc] def fromMatrix(tilesDM: DenseMatrix[Double]): KDTree = {
+        if (tilesDM.cols % 2 != 0) { throw new IndexOutOfBoundsException("The file is not formatted to be a kd tree.") }
+        if (tilesDM(0, 0) != sum(tilesDM(0, ::))) { throw new IndexOutOfBoundsException("The file is not formatted to be a kd tree.") }
 
-        val borderWidth = tilesDenseMatrix(0, 0)
-        val dimensions = tilesDenseMatrix.cols / 2
-        val tilesDenseVector = DenseVector.fill(tilesDenseMatrix.rows - 1){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
-        for (i <- 1 until tilesDenseMatrix.rows) {
-            val rowAsTile = tilesDenseMatrix(i, ::).t
+        val borderWidth = tilesDM(0, 0)
+        val dimensions = tilesDM.cols / 2
+        val tilesDenseVector = DenseVector.fill(tilesDM.rows - 1){ Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0)) }
+        for (i <- 1 until tilesDM.rows) {
+            val rowAsTile = tilesDM(i, ::).t
             tilesDenseVector(i - 1) = Tile(rowAsTile(0 until dimensions), rowAsTile(dimensions to -1))
         }
 
@@ -199,7 +205,8 @@ object KDTree {
         return new KDTree(tiles, borderWidth)
     }
 
-    // Anonymous functions to find on which dimension should the cut of the tile be made.
+    // Anonymous functions to find on which dimension should the cut of the tile be made. Can be used with the create() functions.
+
     /** Cut a tile in two depending on its dimensions, returns two new tiles.
     *
     * If the tile is in two dimensions and the distance between maxs(0) and mins(0) is bigger than
@@ -209,12 +216,10 @@ object KDTree {
     * @param observations the observations in the tile.
     */
     val cutUsingTileDimensions = (parent: Tile, observations: DenseMatrix[Double]) => {
-        val parentSizes = parent.sizes()
+        val parentSizes = parent.sizes
         // We chekc if the parent sites contains some infinities.
         if ((parentSizes :== DenseVector.fill(parentSizes.length){Double.PositiveInfinity}) == BitVector()) {
             val cutDirection = argmax(parentSizes)
-            println(parent.sizes())
-            println(cutDirection)
             val observationsMedian = median(observations(::, cutDirection))
 
             var firstTileMaxs = parent.maxs.copy
@@ -254,6 +259,14 @@ object KDTree {
         (firstTile, secondTile)
     }: (Tile, Tile)
 
+    /** The main function to create the kd tree, used by both create functions.
+    *
+    * @param dataset the dataset used to create the kdtree.
+    * @param parentTile the parent tile that is going to be cut.
+    * @param maxObservations the maximum number of observations per tile.
+    * @param cutFunction the anonymous function used to cut the paren tile.
+    * @return the value of the KDTree (thus a Node)
+    */
     private[stsc] def cutWithMaxObservations(dataset: DenseMatrix[Double], parentTile: Tile, maxObservations: Int, cutFunction: (Tile, DenseMatrix[Double]) => (Tile, Tile)): Node = {
         val observations = parentTile.filter(dataset, 0)
         if (observations.rows > maxObservations) {

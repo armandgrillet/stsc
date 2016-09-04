@@ -46,7 +46,7 @@ class KDTreeTest extends FlatSpec with Matchers {
         val dataset = new File(dataPath)
         val matrix = breeze.linalg.csvread(dataset)
         val t0 = System.nanoTime()
-        val tree = KDTree.createWithTilesNumber(matrix, 8, 0, KDTree.cutUsingTileDimensions)
+        val tree = KDTree.createWithLeafsNumber(matrix, 8, 0, KDTree.cutUsingTileDimensions)
         val t1 = System.nanoTime()
         println("Elapsed time: " + (t1 - t0) + "ns")
         // println(tree.toString())

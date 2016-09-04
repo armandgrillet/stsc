@@ -24,7 +24,7 @@ import java.io.File
 object STSC {
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param csv the dataset to cluster, each row being an observation with each column representing one dimension
+    * @param matrix the dataset to cluster as a DenseMatrix, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
     * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
@@ -46,131 +46,182 @@ object STSC {
 
     /** Cluster a given dataset using a self-tuning spectral clustering algorithm.
     *
-    * @param csvPath the path of the dataset to cluster, each row being an observation with each column representing one dimension
+    * @param path the path of the dataset to cluster, each row being an observation with each column representing one dimension
     * @param minClusters the minimum number of clusters in the dataset
     * @param maxClusters the maximum number of clusters in the dataset
     * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
     */
-    def clusterCSV(csvPath: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
-        val file = new File(csvPath)
+    def clusterCSV(path: String, minClusters: Int = 2, maxClusters: Int = 6): (Int, SortedMap[Int, Double], Array[Int]) = {
+        val file = new File(path)
         val matrix = breeze.linalg.csvread(file)
         return cluster(matrix, minClusters, maxClusters)
     }
 
-    def sparkCluster(sc: SparkContext, csvPath: String, kdTreePath: String, outputPath: String, onlyCentres: Boolean = false, minTileClusters: Int = 2, maxTileClusters: Int = 6) {
-        val tree = KDTree.fromCSV(kdTreePath)
-        val treeString = sc.broadcast(tree.toString())
+    /** Cluster a given dataset using a self-tuning spectral clustering algorithm in parallel using Spark.
+    *
+    * @param sc the Spark context.
+    * @param path path of the dataset.
+    * @param kdTreePath path of the kdtree for the given dataset, used to parallelize the clustering.
+    * @param outputPath where should the output be written.
+    * @param onlyCenters If true, the output will only be the centers of the clusters, if false it will be a list for each observation of their cluster ID.
+    * @param minClusters the minimum number of clusters in each tile.
+    * @param maxClusters the maximum number of clusters in each tile.
+    */
+    def sparkCluster(sc: SparkContext, path: String, kdTreePath: String, outputPath: String, onlyCenters: Boolean = false, minClustersTile: Int = 2, maxClustersTile: Int = 6) {
+        val tree = KDTree.fromCSV(kdTreePath) // Creates the tree.
+        val treeString = sc.broadcast(tree.toString()) // Broadcasts the tree.
 
         val leafsString = sc.broadcast(tree.leafs.map(_.toString()).zipWithIndex.toMap) // Map with leafs(tile) being the position of the tile, giving us a unique ID.
-        val leafs = sc.broadcast(tree.leafs.map(_.toDenseVector()).zipWithIndex.toMap)
-        val borderWidth = sc.broadcast(tree.borderWidth)
-        val dim = sc.broadcast(tree.dimensions)
-        val minClusters = sc.broadcast(minTileClusters)
-        val maxClusters = sc.broadcast(maxTileClusters)
+        val leafs = sc.broadcast(tree.leafs.map(_.toDenseVector).zipWithIndex.toMap)
+        val borderWidth = sc.broadcast(tree.borderWidth) // Broadcasts the border width.
+        val dim = sc.broadcast(tree.dimensions) // Broadcasts the dimensionality of the kd tree.
+        val minClusters = sc.broadcast(minClustersTile) // Broadcasts the minimum number of clusters per tile.
+        val maxClusters = sc.broadcast(maxClustersTile) // Broadcasts the maximum number of clusters per tile.
 
-        val order = (vS: String) => {
-            val v = DenseVector(vS.split(',').map(_.toDouble))
+        /** For each observation, get its owning tiles.
+        *
+        * @param obsString the observation as a String.
+        * @return a sequence containing the tile ID and the observation. Needs to be flatten.
+        */
+        val owners = (obsString: String) => {
+            val obs = DenseVector(obsString.split(',').map(_.toDouble))
             val tree = KDTree.fromString(treeString.value)
-            val owningTiles = tree.owningTiles(v).map(_.toString())
-            Seq.tabulate(owningTiles.length)(i => (leafsString.value(owningTiles(i)), v))
+            val owningTiles = tree.owningTiles(obs).map(_.toString()) // Get the owning tiles of the observation.
+            Seq.tabulate(owningTiles.length)(i => (leafsString.value(owningTiles(i)), obs))
         }: Seq[(Int, DenseVector[Double])]
 
-        val tilesAndVectors = sc.textFile(csvPath).flatMap(order(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
+        val tilesAndVectors = sc.textFile(path).flatMap(owners(_)).groupByKey().map{tAndV => (tAndV._1, tAndV._2.toArray)} // groupByKey returns an iterator, not an array.
 
-        val clusterCentres = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
+        /** Cluster every tile in parallel and return the centers of each clusters.
+        *
+        * @param tileID the tile ID.
+        * @param observations the observations in the tile.
+        * @return a sequence of DenseVectors reprensenting the centers of the clusters.
+        */
+        val clusterCenters = (tileID: Int, observations: Array[DenseVector[Double]]) => {
             var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
             for ((t, id) <- leafs.value) {
                 if (tileID == id) {
-                    tile = Tile(t(0 until dim.value), t(dim.value to -1))
+                    tile = Tile(t(0 until dim.value), t(dim.value to -1)) // We find the tile using the ID we have.
                 }
             }
-            val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
-            for (i <- 0 until vectors.length) {
-                matrix(i, ::) := vectors(i).t
+
+            // Creates a matrix from the observations and clustering it.
+            val matrix = DenseMatrix.zeros[Double](observations.length, dim.value)
+            for (i <- 0 until observations.length) {
+                matrix(i, ::) := observations(i).t
             }
             val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters.value, maxClusters.value)
-            val clustersAndObs = Array.tabulate(vectors.length)(i => (clusters(i), vectors(i))).groupBy(_._1)
 
-            val correctCentres = ArrayBuffer.empty[DenseVector[Double]]
+            // Group by the observations per cluster.
+            val clustersAndObs = Array.tabulate(observations.length)(i => (clusters(i), observations(i))).groupBy(_._1)
 
-            for ((cluster, obs) <- clustersAndObs) {
+            val correctCenters = ArrayBuffer.empty[DenseVector[Double]]
+
+            for ((cluster, obs) <- clustersAndObs) { // For each cluster we check if it is strictly in the tile.
                 val obsAsDM = DenseMatrix.zeros[Double](obs.length, dim.value)
                 for ((ob, i) <- obs.zipWithIndex) {
                     obsAsDM(i, ::) := ob._2.t
                 }
                 val clusterCenter = SparkIsNotABreeze.sumRows(obsAsDM) :/ obs.length.toDouble
-                if (tile.has(clusterCenter.t, 0)) {
-                    correctCentres += clusterCenter.t
+                if (tile.has(clusterCenter.t, 0)) { // It is the case, we add the cluster center.
+                    correctCenters += clusterCenter.t
                 }
             }
-            correctCentres.toSeq
+            correctCenters.toSeq // Return the centers.
         }: Seq[DenseVector[Double]]
 
-        val fullCluster = (tileID: Int, vectors: Array[DenseVector[Double]]) => {
+        /** Cluster every tile in parallel.
+        *
+        * @param tileID the tile ID.
+        * @param observations the observations in the tile.
+        * @return a sequence of Int, Int, DenseMatrix[Double] representing the clusterID, the tile ID and the observations in the cluster.
+        */
+        val fullCluster = (tileID: Int, observations: Array[DenseVector[Double]]) => {
             var tile = Tile(DenseVector.zeros[Double](0), DenseVector.zeros[Double](0))
             for ((t, id) <- leafs.value) {
                 if (tileID == id) {
                     tile = Tile(t(0 until dim.value), t(dim.value to -1))
                 }
             }
-            val matrix = DenseMatrix.zeros[Double](vectors.length, dim.value)
-            for (i <- 0 until vectors.length) {
-                matrix(i, ::) := vectors(i).t
+            val matrix = DenseMatrix.zeros[Double](observations.length, dim.value)
+            for (i <- 0 until observations.length) {
+                matrix(i, ::) := observations(i).t
             }
             val (cBest, costs, clusters) = clusterMatrix(matrix, minClusters.value, maxClusters.value)
-            val clustersAndObs = Array.tabulate(vectors.length)(i => (clusters(i), vectors(i))).groupBy(_._1)
+            val clustersAndObs = Array.tabulate(observations.length)(i => (clusters(i), observations(i))).groupBy(_._1)
 
-            val result = ArrayBuffer.empty[(DenseVector[Double], Int, Int, DenseMatrix[Double])]
+            val result = ArrayBuffer.empty[(Int, Int, DenseMatrix[Double])]
 
-            for ((cluster, obs) <- clustersAndObs) {
+            for ((cluster, obs) <- clustersAndObs) { // For each cluster we check if it is strictly in the tile.
                 val obsAsDM = DenseMatrix.zeros[Double](obs.length, dim.value)
                 for ((ob, i) <- obs.zipWithIndex) {
                     obsAsDM(i, ::) := ob._2.t
                 }
                 val clusterCenter = SparkIsNotABreeze.sumRows(obsAsDM) :/ obs.length.toDouble
-                if (tile.has(clusterCenter.t, 0)) {
-                    result += ((clusterCenter.t, cluster, tileID, obsAsDM))
+                if (tile.has(clusterCenter.t, 0)) {  // It is the case, we add the observations.
+                    result += ((cluster, tileID, obsAsDM))
                 }
             }
             result.toSeq
-        }: Seq[(DenseVector[Double], Int, Int, DenseMatrix[Double])]
+        }: Seq[(Int, Int, DenseMatrix[Double])]
 
-        val asJSON = (clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
+        /** Print the cluster as a JSON, useful when merging the clusters.
+        *
+        * @param clusterID the cluster ID.
+        * @param tileID the tile ID.
+        * @param observations the observations in the tile.
+        * @return the cluster as a String formatted in JSON.
+        */
+        val toJSON = (clusterID: Int, tileID: Int, observations: DenseMatrix[Double]) => {
             var json = "\t},\n\t{\n\t\t\"id\": \"" + tileID.toString + "." + clusterID.toString + "\",\n\t\t\"obs\": [\n"
-            for (i <- 0 until vectors.rows) {
+            for (i <- 0 until observations.rows) {
                 if (i != 0) { json += ",\n" }
-                json += "\t\t\t{ \"coord\": \"" + vectors(i, ::).t.toArray.mkString(", ") + "\" }"
+                json += "\t\t\t{ \"coord\": \"" + observations(i, ::).t.toArray.mkString(", ") + "\" }"
             }
             json += "\n\t\t]"
             json
         }: String
 
-        val asCSV = (clusterID: Int, tileID: Int, vectors: DenseMatrix[Double]) => {
-            Array.tabulate(vectors.rows)(i => (vectors(i, ::).t, tileID, clusterID)).toSeq
+        /** Cluster every tile in parallel.
+        *
+        * @param clusterID the cluster ID.
+        * @param tileID the tile ID.
+        * @param observations the observations in the tile.
+        * @return a sequence representing each observation, its tile and its cluster.
+        */
+        val toCSV = (clusterID: Int, tileID: Int, observations: DenseMatrix[Double]) => {
+            Array.tabulate(observations.rows)(i => (observations(i, ::).t, tileID, clusterID)).toSeq
         }: Seq[(DenseVector[Double], Int, Int)]
 
+        // Doing the operations in parallel will result in multiple files that we need to merge.
         val hadoopConfig = new Configuration()
         val hdfs = FileSystem.get(hadoopConfig)
-        if (onlyCentres) {
+
+        if (onlyCenters) {
             FileUtil.fullyDelete(new File("/tmp/result"))
             FileUtil.fullyDelete(new File(outputPath))
-            tilesAndVectors.flatMap(tile => clusterCentres(tile._1, tile._2)).map(_.toArray.mkString(", ")).saveAsTextFile("/tmp/result")
+            // Save the centers in a CSV file corresponding to the output given.
+            tilesAndVectors.flatMap(tile => clusterCenters(tile._1, tile._2)).map(_.toArray.mkString(", ")).saveAsTextFile("/tmp/result")
             FileUtil.copyMerge(hdfs, new Path("/tmp/result"), hdfs, new Path(outputPath), false, hadoopConfig, null)
             FileUtil.fullyDelete(new File("/tmp/result"))
         } else {
             FileUtil.fullyDelete(new File("/tmp/resultCSV"))
             FileUtil.fullyDelete(new File(outputPath + ".csv"))
             FileUtil.fullyDelete(new File(outputPath + ".json"))
+            // Save the clusters as a CSV with each observation being a row (as in the input).
             val clusters = tilesAndVectors.flatMap(tile => fullCluster(tile._1, tile._2))
-            clusters.flatMap(cluster => asCSV(cluster._2, cluster._3, cluster._4)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/resultCSV")
+            clusters.flatMap(cluster => toCSV(cluster._1, cluster._2, cluster._3)).map(ob => ob._1.toArray.mkString(", ") + ", " + ob._2 + "." + ob._3).saveAsTextFile("/tmp/resultCSV")
             FileUtil.copyMerge(hdfs, new Path("/tmp/resultCSV"), hdfs, new Path(outputPath + ".csv"), false, hadoopConfig, null)
             FileUtil.fullyDelete(new File("/tmp/resultCSV"))
 
             FileUtil.fullyDelete(new File("/tmp/resultJSON"))
-            clusters.map(cluster => asJSON(cluster._2, cluster._3, cluster._4)).saveAsTextFile("/tmp/resultJSON")
+            // Save the clusters as a JSON where the cluster IDs are the keys. Same output as before but .json file format.
+            clusters.map(cluster => toJSON(cluster._1, cluster._2, cluster._3)).saveAsTextFile("/tmp/resultJSON")
             val out = hdfs.create(new Path(outputPath + ".json"))
             out.write(("[\n").getBytes("UTF-8"))
 
+            // Transforming parallel data to a JSON is not easy, we need to add some hacks so that we have commas where we should.
             try {
                 val folder = hdfs.listStatus(new Path("/tmp/resultJSON"))
                 for (i <- 1 until folder.length) { // folder(0) is a useless file.
@@ -192,6 +243,13 @@ object STSC {
         }
     }
 
+    /** Cluster a matrix. using a self-tuning spectral clustering algorithm. Private function used by public functions to cluster a matrix or a CSV.
+    *
+    * @param matrix the dataset to cluster as a DenseMatrix, each row being an observation with each column representing one dimension
+    * @param minClusters the minimum number of clusters in the dataset
+    * @param maxClusters the maximum number of clusters in the dataset
+    * @return the best possible numer of clusters, a Map of costs (key = number of clusters, value = cost for this number of clusters) and the clusters obtained for the best possible number.
+    */
     private[stsc] def clusterMatrix(matrix: DenseMatrix[Double], minClusters: Int, maxClusters: Int): (Int, SortedMap[Int, Double], Array[Int]) = {
         // Compute local scale (step 1).
         val distances = euclideanDistances(matrix)
@@ -211,8 +269,6 @@ object STSC {
         val tzero = System.nanoTime()
         var (cost, rotatedEigenvectors) = bestRotation(currentEigenvectors)
         val tone = System.nanoTime()
-        println("Elapsed time: " + (tone - tzero) / 1000000000 + "s")
-        println(minClusters.toString + ": " + cost)
         var costs = Map(minClusters -> cost) // List of the costs.
         var bestRotatedEigenvectors = rotatedEigenvectors // The matrix of rotated eigenvectors having the minimal cost.
 
@@ -222,8 +278,6 @@ object STSC {
             val t0 = System.nanoTime()
             val (tempCost, tempRotatedEigenvectors) = bestRotation(currentEigenvectors)
             val t1 = System.nanoTime()
-            println("Elapsed time: " + (t1 - t0) / 1000000000 + "s")
-            println((k + 1).toString + ": " + tempCost)
             costs += (k + 1 -> tempCost) // Add the cost to the map.
             rotatedEigenvectors = tempRotatedEigenvectors // We keep the new rotation of the eigenvectors.
 

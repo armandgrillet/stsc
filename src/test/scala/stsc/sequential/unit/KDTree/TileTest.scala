@@ -8,8 +8,8 @@ class TileTest extends FlatSpec with Matchers {
     "The tile" should "work" in {
         val KDTreeBorderWidth = 2
         val tile = Tile(DenseVector(-1), DenseVector(10))
-        tile.sizes() should be(DenseVector(11.0))
-        tile.toTranspose() should be(DenseVector(-1.0, 10.0).t)
+        tile.sizes should be(DenseVector(11.0))
+        tile.toTranspose should be(DenseVector(-1.0, 10.0).t)
 
         val obsOne = DenseVector(5.0)
         tile.has(obsOne, KDTreeBorderWidth) should be (true)

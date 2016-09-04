@@ -43,30 +43,37 @@ case class Tile(mins: DenseVector[Double], maxs: DenseVector[Double]) {
     /** The length of a tile in every dimension.
       * @return the tile dimensions has a DenseVector, tile.sizes()(0) is the length of the tile in the first dimension.
       */
-    def sizes(): DenseVector[Double] = {
+    def sizes: DenseVector[Double] = {
         return abs(maxs - mins)
     }
 
     /** @return the tile as an Array with all the minimums then all the maximums. */
-    def toArray(): Array[Double] = {
+    def toArray: Array[Double] = {
         return DenseVector.vertcat(mins, maxs).toArray
     }
 
     /** @return the tile as a DenseVector with all the minimums then all the maximums. */
-    def toDenseVector(): DenseVector[Double] = {
+    def toDenseVector: DenseVector[Double] = {
         return DenseVector.vertcat(mins, maxs)
     }
 
-    /** @return the tile as a DenseVector with all the minimums then all the maximums. */
-    override def toString(): String = {
+    /** @return the tile as a String with all the minimums then all the maximums. */
+    override def toString: String = {
         return mins.activeValuesIterator.mkString(",") + "," + maxs.activeValuesIterator.mkString(",")
     }
 
     /** @return the tile as a Transpose with all the minimums then all the maximums. */
-    def toTranspose(): Transpose[DenseVector[Double]] = {
+    def toTranspose: Transpose[DenseVector[Double]] = {
         return DenseVector.vertcat(mins, maxs).t
     }
 
+    /** Filters a matrix to only returns the observations that are in the tile and a certain border width.
+    *
+    * @param dataset the dataset to filter.
+    * @param borderWidth the border width to use.
+    * @param maxClusters the maximum number of clusters in the dataset
+    * @return the filtered DenseMatrix.
+    */
     def filter(dataset: DenseMatrix[Double], borderWidth: Double): DenseMatrix[Double] = {
         val observations = DenseMatrix.zeros[Double](dataset.rows, dataset.cols)
         var numberOfObservations = 0
